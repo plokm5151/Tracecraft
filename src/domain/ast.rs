@@ -5,6 +5,7 @@
 #[derive(Debug)]
 pub struct AstNode {
     pub kind: AstNodeKind,
+    pub name: Option<String>,
     pub children: Vec<AstNode>,
 }
 

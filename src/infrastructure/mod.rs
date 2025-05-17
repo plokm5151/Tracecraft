@@ -12,6 +12,7 @@ impl AstParser for SynAstParser {
             Ok(file) => file,
             Err(_) => return AstNode {
                 kind: AstNodeKind::Module,
+                name: None,
                 children: vec![],
             },
         };
@@ -19,14 +20,17 @@ impl AstParser for SynAstParser {
         let mut children = Vec::new();
         for item in ast_file.items {
             if let Item::Fn(ref func) = item {
+                let name = func.sig.ident.to_string();
                 children.push(AstNode {
                     kind: AstNodeKind::Function,
+                    name: Some(name),
                     children: vec![],
                 });
             }
         }
         AstNode {
             kind: AstNodeKind::Module,
+            name: None,
             children,
         }
     }
@@ -35,12 +39,13 @@ impl AstParser for SynAstParser {
 pub struct SimpleCallGraphBuilder;
 impl CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, root: &AstNode) -> CallGraph {
-        // 每個 function 建立一個 CallGraphNode
+        // 每個 function 建立一個 CallGraphNode（用 function 名稱做 id）
         let mut nodes = Vec::new();
-        for (i, child) in root.children.iter().enumerate() {
+        for child in root.children.iter() {
             if let AstNodeKind::Function = child.kind {
+                let id = child.name.clone().unwrap_or("unknown".to_string());
                 nodes.push(CallGraphNode {
-                    id: format!("function_{}", i + 1),
+                    id,
                     callees: vec![],
                 });
             }
