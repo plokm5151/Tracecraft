@@ -1,0 +1,3 @@
+# TraceCraft
+
+A Rust-based static analysis tool focused on multi-crate workspaces, enabling comprehensive call graph, AST, and dependency tree analysis for large-scale projects, optimized for local and privacy-sensitive environments.
