@@ -14,3 +14,9 @@ pub struct CallGraphNode {
 pub struct CallGraph {
     pub nodes: Vec<CallGraphNode>,
 }
+
+/// Call graph for a single file.
+pub struct FileCallGraph {
+    pub filename: String,
+    pub callgraph: CallGraph,
+}
