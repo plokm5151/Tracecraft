@@ -1,0 +1,1 @@
+// Stub for infrastructure module
