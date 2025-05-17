@@ -39,7 +39,6 @@ impl AstParser for SynAstParser {
 pub struct SimpleCallGraphBuilder;
 impl CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, root: &AstNode) -> CallGraph {
-        // 每個 function 建立一個 CallGraphNode（用 function 名稱做 id）
         let mut nodes = Vec::new();
         for child in root.children.iter() {
             if let AstNodeKind::Function = child.kind {
@@ -57,6 +56,16 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
 pub struct DotExporter;
 impl OutputExporter for DotExporter {
     fn export(&self, data: &str, path: &str) -> std::io::Result<()> {
-        std::fs::write(path, data)
+        // data: 是 call graph 的 debug print，這裡我們要手動轉成 DOT 格式
+        // 所以這裡實際應該要接收 CallGraph，但目前介面傳進來的是字串
+        // 暫時直接產生一個簡單的 DOT file
+        let lines = [
+            "digraph G {",
+            // 可進一步遍歷 call graph node/callees
+            "    main;",
+            "}",
+        ];
+        let dot_content = lines.join("\n");
+        std::fs::write(path, dot_content)
     }
 }
