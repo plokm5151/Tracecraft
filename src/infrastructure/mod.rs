@@ -53,6 +53,7 @@ pub struct SimpleCallGraphBuilder;
 impl CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
         let mut alias_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut trait_impls: HashMap<String, Vec<String>> = HashMap::new(); // trait_name -> [type names]
         for (_crate_name, _path, code) in files {
             let ast_file: File = match syn::parse_file(code) {
                 Ok(f) => f,
@@ -62,11 +63,26 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
                 if let Item::Use(ref u) = item {
                     visit_use(&u.tree, vec![], &mut alias_map);
                 }
+                if let Item::Impl(ref imp) = item {
+                    if let Some((_, path, _)) = &imp.trait_ {
+                        // 這是一個 trait impl
+                        let trait_name = path.segments.last().unwrap().ident.to_string();
+                        let type_name = match &*imp.self_ty {
+                            syn::Type::Path(type_path) => {
+                                type_path.path.segments.last().unwrap().ident.to_string()
+                            }
+                            _ => "Self".to_string(),
+                        };
+                        trait_impls.entry(trait_name).or_default().push(type_name);
+                    }
+                }
             }
         }
         println!("DEBUG: alias_map = {:?}", alias_map);
+        println!("DEBUG: trait_impls = {:?}", trait_impls);
 
         let mut func_defs = vec![];
+        let mut trait_methods = HashMap::new(); // trait_name -> [method names]
         for (crate_name, path, code) in files {
             let ast_file: File = match syn::parse_file(code) {
                 Ok(f) => f,
@@ -76,7 +92,7 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
                 if let Item::Fn(ref func) = item {
                     let name = func.sig.ident.to_string();
                     let mut callees = vec![];
-                    visit_stmts(&func.block.stmts, &mut callees);
+                    visit_stmts(&func.block.stmts, &mut callees, &trait_impls, &mut trait_methods);
                     println!(
                         "DEBUG: insert fn={} crate={} path={} callees={:?}",
                         name, crate_name, path, callees
@@ -95,7 +111,7 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
                             let method_name = method.sig.ident.to_string();
                             let name = format!("{}::{}", type_name, method_name);
                             let mut callees = vec![];
-                            visit_stmts(&method.block.stmts, &mut callees);
+                            visit_stmts(&method.block.stmts, &mut callees, &trait_impls, &mut trait_methods);
                             println!(
                                 "DEBUG: insert method name={} crate={} path={} callees={:?}",
                                 name, crate_name, path, callees
@@ -103,6 +119,15 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
                             func_defs.push((name, crate_name.clone(), path.clone(), callees));
                         }
                     }
+                }
+                if let Item::Trait(ref tr) = item {
+                    let trait_name = tr.ident.to_string();
+                    let methods: Vec<_> = tr.items.iter().filter_map(|i| {
+                        if let syn::TraitItem::Fn(f) = i {
+                            Some(f.sig.ident.to_string())
+                        } else { None }
+                    }).collect();
+                    trait_methods.insert(trait_name, methods);
                 }
             }
         }
@@ -120,27 +145,29 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
             let id = format!("{}@{}", name, crate_name);
             let callee_ids = callees
                 .iter()
-                .filter_map(|callee_name| {
-                    let mut real_callee = callee_name.clone();
-                    let alias_key = callee_name.split("::").next().unwrap_or("");
-                    if let Some(full_path) = alias_map.get(alias_key) {
-                        let rest: Vec<&str> = callee_name.split("::").skip(1).collect();
-                        let mut full = full_path.clone();
-                        for r in rest {
-                            full.push(r.to_string());
+                .flat_map(|callee_name| {
+                    // 若是 "Trait::method"（trait method call），展開所有 impl
+                    if let Some((trait_name, method)) = callee_name.split_once("::") {
+                        if let Some(types) = trait_impls.get(trait_name) {
+                            // 展開所有 Type::method
+                            types.iter().map(|ty| format!("{}::{}@{}", ty, method, crate_name)).collect::<Vec<_>>()
+                        } else {
+                            vec![format!("{}@{}", callee_name, crate_name)]
                         }
-                        real_callee = full.join("::");
+                    } else {
+                        vec![format!("{}@{}", callee_name, crate_name)]
                     }
-                    let search_id = format!("{}@{}", real_callee, crate_name);
-                    if id_map.contains_key(&search_id) {
-                        Some(search_id)
+                })
+                .filter(|search_id| {
+                    if id_map.contains_key(search_id) {
+                        true
                     } else {
                         println!(
                             "DEBUG: resolve-miss search_id={}  all_keys={:?}",
                             search_id,
                             id_map.keys().collect::<Vec<_>>()
                         );
-                        None
+                        false
                     }
                 })
                 .collect();
@@ -153,15 +180,25 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
     }
 }
 
-fn visit_stmts(stmts: &Vec<Stmt>, callees: &mut Vec<String>) {
+fn visit_stmts(
+    stmts: &Vec<Stmt>,
+    callees: &mut Vec<String>,
+    trait_impls: &HashMap<String, Vec<String>>,
+    trait_methods: &mut HashMap<String, Vec<String>>,
+) {
     for stmt in stmts {
         match stmt {
-            Stmt::Expr(expr, _) => visit_expr(expr, callees),
+            Stmt::Expr(expr, _) => visit_expr(expr, callees, trait_impls, trait_methods),
             _ => {}
         }
     }
 }
-fn visit_expr(expr: &Expr, callees: &mut Vec<String>) {
+fn visit_expr(
+    expr: &Expr,
+    callees: &mut Vec<String>,
+    trait_impls: &HashMap<String, Vec<String>>,
+    trait_methods: &mut HashMap<String, Vec<String>>,
+) {
     match expr {
         Expr::Call(expr_call) => {
             if let Expr::Path(ref expr_path) = *expr_call.func {
@@ -173,14 +210,13 @@ fn visit_expr(expr: &Expr, callees: &mut Vec<String>) {
                 }
             }
             for arg in &expr_call.args {
-                visit_expr(arg, callees);
+                visit_expr(arg, callees, trait_impls, trait_methods);
             }
         }
         Expr::MethodCall(expr_method) => {
             let method_name = expr_method.method.to_string();
             let receiver_type = match &*expr_method.receiver {
                 Expr::Path(expr_path) => expr_path.path.segments.last().map(|s| {
-                    // 大寫開頭推斷型別，否則自動轉大寫（Rust慣例變數小寫、型別大寫）
                     let id = s.ident.to_string();
                     if id.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
                         let mut chars = id.chars();
@@ -195,19 +231,32 @@ fn visit_expr(expr: &Expr, callees: &mut Vec<String>) {
                 }),
                 _ => None,
             };
-            let callee_id = if let Some(ty) = receiver_type {
-                format!("{}::{}", ty, method_name)
-            } else {
-                method_name.clone()
-            };
-            println!("DEBUG: Detected method call: {}", callee_id);
-            callees.push(callee_id);
-            for arg in &expr_method.args {
-                visit_expr(arg, callees);
+
+            // 如果 method 名字在 trait_methods 裡出現，代表這可能是 trait 呼叫
+            let mut is_trait_method = false;
+            for (trait_name, methods) in trait_methods.iter() {
+                if methods.contains(&method_name) {
+                    is_trait_method = true;
+                    let callee_id = format!("{}::{}", trait_name, method_name);
+                    println!("DEBUG: Detected trait method call: {}", callee_id);
+                    callees.push(callee_id);
+                }
             }
-            visit_expr(&expr_method.receiver, callees);
+            if !is_trait_method {
+                let callee_id = if let Some(ty) = receiver_type {
+                    format!("{}::{}", ty, method_name)
+                } else {
+                    method_name.clone()
+                };
+                println!("DEBUG: Detected method call: {}", callee_id);
+                callees.push(callee_id);
+            }
+            for arg in &expr_method.args {
+                visit_expr(arg, callees, trait_impls, trait_methods);
+            }
+            visit_expr(&expr_method.receiver, callees, trait_impls, trait_methods);
         }
-        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees),
+        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, trait_impls, trait_methods),
         _ => {}
     }
 }
