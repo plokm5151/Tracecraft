@@ -4,6 +4,36 @@ use syn::{File, Item, Expr, Stmt};
 use std::collections::HashMap;
 use std::fs;
 
+fn visit_use(
+    tree: &syn::UseTree,
+    prefix: Vec<String>,
+    map: &mut HashMap<String, Vec<String>>,
+) {
+    match tree {
+        syn::UseTree::Name(n) => {
+            let mut full = prefix.clone();
+            full.push(n.ident.to_string());
+            map.insert(n.ident.to_string(), full);
+        }
+        syn::UseTree::Rename(r) => {
+            let mut full = prefix.clone();
+            full.push(r.ident.to_string());
+            map.insert(r.rename.to_string(), full);
+        }
+        syn::UseTree::Path(p) => {
+            let mut pre = prefix.clone();
+            pre.push(p.ident.to_string());
+            visit_use(&p.tree, pre, map);
+        }
+        syn::UseTree::Group(g) => {
+            for t in &g.items {
+                visit_use(t, prefix.clone(), map);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
 pub struct DotExporter;
 impl OutputExporter for DotExporter {
     fn export(&self, cg: &CallGraph, path: &str) -> std::io::Result<()> {
@@ -22,61 +52,98 @@ impl OutputExporter for DotExporter {
 pub struct SimpleCallGraphBuilder;
 impl CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
+        let mut alias_map: HashMap<String, Vec<String>> = HashMap::new();
+        for (_crate_name, _path, code) in files {
+            let ast_file: File = match syn::parse_file(code) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            for item in &ast_file.items {
+                if let Item::Use(ref u) = item {
+                    visit_use(&u.tree, vec![], &mut alias_map);
+                }
+            }
+        }
+        println!("DEBUG: alias_map = {:?}", alias_map);
+
         let mut func_defs = vec![];
-        // 收集所有 function 定義
         for (crate_name, path, code) in files {
             let ast_file: File = match syn::parse_file(code) {
                 Ok(f) => f,
                 Err(_) => continue,
             };
-            for item in ast_file.items {
+            for item in &ast_file.items {
                 if let Item::Fn(ref func) = item {
                     let name = func.sig.ident.to_string();
                     let mut callees = vec![];
                     visit_stmts(&func.block.stmts, &mut callees);
-                    println!("[DEBUG][insert] fn={} crate={} path={} callees={:?}", name, crate_name, path, callees);
+                    println!(
+                        "DEBUG: insert fn={} crate={} path={} callees={:?}",
+                        name, crate_name, path, callees
+                    );
                     func_defs.push((name, crate_name.clone(), path.clone(), callees));
+                }
+                if let Item::Impl(ref imp) = item {
+                    let type_name = match &*imp.self_ty {
+                        syn::Type::Path(type_path) => {
+                            type_path.path.segments.last().unwrap().ident.to_string()
+                        }
+                        _ => "Self".to_string(),
+                    };
+                    for imp_item in &imp.items {
+                        if let syn::ImplItem::Fn(ref method) = imp_item {
+                            let method_name = method.sig.ident.to_string();
+                            let name = format!("{}::{}", type_name, method_name);
+                            let mut callees = vec![];
+                            visit_stmts(&method.block.stmts, &mut callees);
+                            println!(
+                                "DEBUG: insert method name={} crate={} path={} callees={:?}",
+                                name, crate_name, path, callees
+                            );
+                            func_defs.push((name, crate_name.clone(), path.clone(), callees));
+                        }
+                    }
                 }
             }
         }
-        // 一次性建立全局 id_map
         let mut id_map: HashMap<String, (String, String, String)> = HashMap::new();
         for (name, crate_name, path, _) in &func_defs {
             let id = format!("{}@{}", name, crate_name);
             id_map.insert(id, (name.clone(), crate_name.clone(), path.clone()));
         }
-        println!("[DEBUG][final id_map keys] {:?}", id_map.keys().collect::<Vec<_>>());
-
-        // resolve callee id，這裡用全局 id_map
+        println!(
+            "DEBUG: final id_map keys = {:?}",
+            id_map.keys().collect::<Vec<_>>()
+        );
         let mut nodes = vec![];
         for (name, crate_name, _path, callees) in &func_defs {
             let id = format!("{}@{}", name, crate_name);
-            if id == "main@crate1" {
-                println!("[DEBUG] main@crate1 的 callees: {:?}", callees);
-            }
-            let callee_ids = callees.iter().filter_map(|callee_name| {
-                if callee_name.contains("::") {
-                    let parts: Vec<&str> = callee_name.split("::").collect();
-                    if parts.len() == 2 {
-                        let search_id = format!("{}@{}", parts[1], parts[0]);
-                        println!("[DEBUG][resolve] parts: {:?} -> search_id={}", parts, search_id);
-                        if id_map.contains_key(&search_id) {
-                            Some(search_id)
-                        } else {
-                            println!("[DEBUG][resolve-miss] search_id={}  all_keys={:?}", search_id, id_map.keys().collect::<Vec<_>>() );
-                            None
+            let callee_ids = callees
+                .iter()
+                .filter_map(|callee_name| {
+                    let mut real_callee = callee_name.clone();
+                    let alias_key = callee_name.split("::").next().unwrap_or("");
+                    if let Some(full_path) = alias_map.get(alias_key) {
+                        let rest: Vec<&str> = callee_name.split("::").skip(1).collect();
+                        let mut full = full_path.clone();
+                        for r in rest {
+                            full.push(r.to_string());
                         }
-                    } else { None }
-                } else {
-                    let search_id = format!("{}@{}", callee_name, crate_name);
+                        real_callee = full.join("::");
+                    }
+                    let search_id = format!("{}@{}", real_callee, crate_name);
                     if id_map.contains_key(&search_id) {
                         Some(search_id)
                     } else {
-                        println!("[DEBUG][resolve-miss] search_id={}  all_keys={:?}", search_id, id_map.keys().collect::<Vec<_>>() );
+                        println!(
+                            "DEBUG: resolve-miss search_id={}  all_keys={:?}",
+                            search_id,
+                            id_map.keys().collect::<Vec<_>>()
+                        );
                         None
                     }
-                }
-            }).collect();
+                })
+                .collect();
             nodes.push(CallGraphNode {
                 id,
                 callees: callee_ids,
@@ -86,7 +153,7 @@ impl CallGraphBuilder for SimpleCallGraphBuilder {
     }
 }
 
-fn visit_stmts(stmts: &[Stmt], callees: &mut Vec<String>) {
+fn visit_stmts(stmts: &Vec<Stmt>, callees: &mut Vec<String>) {
     for stmt in stmts {
         match stmt {
             Stmt::Expr(expr, _) => visit_expr(expr, callees),
@@ -98,15 +165,47 @@ fn visit_expr(expr: &Expr, callees: &mut Vec<String>) {
     match expr {
         Expr::Call(expr_call) => {
             if let Expr::Path(ref expr_path) = *expr_call.func {
-                let segments: Vec<_> = expr_path.path.segments.iter().map(|s| s.ident.to_string()).collect();
+                let segments: Vec<_> =
+                    expr_path.path.segments.iter().map(|s| s.ident.to_string()).collect();
                 if !segments.is_empty() {
-                    println!("[DEBUG] Detected call: {}", segments.join("::"));
+                    println!("DEBUG: Detected call: {}", segments.join("::"));
                     callees.push(segments.join("::"));
                 }
             }
             for arg in &expr_call.args {
                 visit_expr(arg, callees);
             }
+        }
+        Expr::MethodCall(expr_method) => {
+            let method_name = expr_method.method.to_string();
+            let receiver_type = match &*expr_method.receiver {
+                Expr::Path(expr_path) => expr_path.path.segments.last().map(|s| {
+                    // 大寫開頭推斷型別，否則自動轉大寫（Rust慣例變數小寫、型別大寫）
+                    let id = s.ident.to_string();
+                    if id.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                        let mut chars = id.chars();
+                        if let Some(f) = chars.next() {
+                            f.to_uppercase().collect::<String>() + chars.as_str()
+                        } else {
+                            id
+                        }
+                    } else {
+                        id
+                    }
+                }),
+                _ => None,
+            };
+            let callee_id = if let Some(ty) = receiver_type {
+                format!("{}::{}", ty, method_name)
+            } else {
+                method_name.clone()
+            };
+            println!("DEBUG: Detected method call: {}", callee_id);
+            callees.push(callee_id);
+            for arg in &expr_method.args {
+                visit_expr(arg, callees);
+            }
+            visit_expr(&expr_method.receiver, callees);
         }
         Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees),
         _ => {}

@@ -1,0 +1,8 @@
+struct Foo;
+impl Foo {
+    fn bar(&self) {}
+}
+fn main() {
+    let foo = Foo;
+    foo.bar();
+}
