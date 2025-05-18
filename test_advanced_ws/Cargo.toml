@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "lib_base",
+    "lib_derive",
+    "lib_trait",
+    "bin_demo",
+]
