@@ -6,7 +6,7 @@
 pub struct CallGraphNode {
     pub id: String, // function/module/unique identifier
     pub callees: Vec<String>, // list of IDs this node calls
-    // ... add more metadata as needed
+    pub label: Option<String>, // label for DOT (file:line etc)
 }
 
 /// The call graph itself.
