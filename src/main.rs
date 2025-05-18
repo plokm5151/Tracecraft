@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::fs;
 use std::path::Path;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 use tracecraft::infrastructure::{SimpleCallGraphBuilder, DotExporter};
 use tracecraft::ports::{CallGraphBuilder, OutputExporter};
@@ -112,7 +112,7 @@ fn main() {
         let mut all_paths: Vec<Vec<String>> = vec![];
         let mut stack = vec![(vec![entry.clone()], entry.clone())]; // (目前路徑, 當前節點)
 
-        while let Some((mut path, node_id)) = stack.pop() {
+        while let Some((path, node_id)) = stack.pop() {
             if node_id == *target_id {
                 all_paths.push(path.clone());
                 continue;
