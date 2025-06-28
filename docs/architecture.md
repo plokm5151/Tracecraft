@@ -27,7 +27,7 @@ TraceCraft aims to be an extensible, high-performance static analysis tool for R
 - AST Parser (syn)
 - Dependency Analyzer
 - Trace Tree/Flow
-- CallGraph Builder
+- Call Graph Builder
 - Output Engine (Exporter/Formatter)
 
 ## Design Considerations
