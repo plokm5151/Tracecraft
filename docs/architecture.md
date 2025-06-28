@@ -2,7 +2,7 @@
 
 ## Project Vision
 
-TraceCraft aims to be an extensible, high-performance static analysis tool for Rust, focusing on large-scale multi-crate workspaces. It provides comprehensive call graphs, module dependency maps, full AST traversal, and flexible output (DOT, JSON, text, etc.), all optimized for local/offline analysis.
+TraceCraft aims to be an extensible, high-performance static analysis tool for Rust, focusing on large-scale multi-crate workspaces. It provides comprehensive call graphs, module dependency maps and full AST traversal. The current implementation exports results only in DOT format, with additional formats (JSON, plain text, etc.) planned for future releases.
 
 ## High-Level Architecture
 
@@ -12,7 +12,7 @@ TraceCraft aims to be an extensible, high-performance static analysis tool for R
 - AST Parser (syn) for code structure extraction.
 - Dependency Analyzer for imports, features, and inter-crate links.
 - Trace Tree/Call Graph Builder for execution path reconstruction.
-- Output Engine for rendering DOT, JSON, text, and plugin-based formats.
+- Output Engine for generating DOT output (future JSON/text and plugin-based formats).
 - Async and memory-efficient IO design for large project scalability.
 
 ## Key Components

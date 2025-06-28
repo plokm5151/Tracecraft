@@ -18,7 +18,7 @@
 ## 4. Teaching, Documentation, and Developer Training
 
 - Scenario: Senior engineers or technical writers want to produce readable flowcharts or summaries for documentation or training.
-- How TraceCraft helps: Export call graphs and execution flows in multiple formats (text, DOT, Mermaid) for easy embedding and explanation.
+- How TraceCraft helps: Export call graphs and execution flows in DOT format for easy embedding and explanation. Support for other formats (text, Mermaid, etc.) is planned for future versions.
 
 ## 5. Resource-Constrained/Privacy-Sensitive Development
 
