@@ -9,7 +9,7 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
         let mut impls = Vec::new();
         let mut func_defs = Vec::new();
 
-        for (_crate_name, file, code) in files {
+        for (crate_name, file, code) in files {
             let ast_file = syn::parse_file(code).expect("Parse error");
             // 收集 impl
             for item in &ast_file.items {
@@ -30,10 +30,10 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
                 if let Item::Fn(func) = item {
                     let name = func.sig.ident.to_string();
                     let mut callees = vec![];
-                    visit_stmts(&func.block.stmts, &mut callees, &impls);
+                    visit_stmts(&func.block.stmts, &mut callees, &impls, crate_name);
                     let line = func.sig.ident.span().start().line;
                     let label = Some(format!("{}:{}", file, line));
-                    func_defs.push((name, "main".to_string(), "".to_string(), callees, label));
+                    func_defs.push((name, crate_name.clone(), "".to_string(), callees, label));
                 }
             }
         }
@@ -53,26 +53,36 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
 }
 
 // 遍歷語法樹、分析函式呼叫
-fn visit_stmts(stmts: &Vec<Stmt>, callees: &mut Vec<String>, impls: &Vec<(String, String)>) {
+fn visit_stmts(
+    stmts: &Vec<Stmt>,
+    callees: &mut Vec<String>,
+    impls: &Vec<(String, String)>,
+    crate_name: &str,
+) {
     for stmt in stmts {
         match stmt {
-            Stmt::Expr(expr, _) => visit_expr(expr, callees, impls),
+            Stmt::Expr(expr, _) => visit_expr(expr, callees, impls, crate_name),
             _ => {}
         }
     }
 }
 
-fn visit_expr(expr: &Expr, callees: &mut Vec<String>, impls: &Vec<(String, String)>) {
+fn visit_expr(
+    expr: &Expr,
+    callees: &mut Vec<String>,
+    impls: &Vec<(String, String)>,
+    crate_name: &str,
+) {
     match expr {
         Expr::Call(expr_call) => {
             if let Expr::Path(ref expr_path) = *expr_call.func {
                 let segments: Vec<_> = expr_path.path.segments.iter().map(|s| s.ident.to_string()).collect();
                 if !segments.is_empty() {
-                    callees.push(segments.join("::"));
+                    callees.push(format!("{}@{}", segments.join("::"), crate_name));
                 }
             }
             for arg in &expr_call.args {
-                visit_expr(arg, callees, impls);
+                visit_expr(arg, callees, impls, crate_name);
             }
         }
         Expr::MethodCall(expr_method) => {
@@ -86,55 +96,60 @@ fn visit_expr(expr: &Expr, callees: &mut Vec<String>, impls: &Vec<(String, Strin
                 let mut found = false;
                 for (type_name, method) in impls {
                     if type_name == rt && method == &method_name {
-                        let callee_id = format!("{}::{}@main", type_name, method_name);
+                        let callee_id = format!("{}::{}@{}", type_name, method_name, crate_name);
                         callees.push(callee_id);
                         found = true;
                         break;
                     }
                 }
                 if !found {
-                    callees.push(format!("{}::{}@main", rt, method_name));
+                    callees.push(format!("{}::{}@{}", rt, method_name, crate_name));
                 }
             } else {
-                callees.push(format!("{}@main", method_name));
+                callees.push(format!("{}@{}", method_name, crate_name));
             }
             for arg in &expr_method.args {
-                visit_expr(arg, callees, impls);
+                visit_expr(arg, callees, impls, crate_name);
             }
-            visit_expr(&expr_method.receiver, callees, impls);
+            visit_expr(&expr_method.receiver, callees, impls, crate_name);
         }
-        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, impls),
+        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, impls, crate_name),
         Expr::If(expr_if) => {
             callees.push("if(...)".to_string());
-            visit_expr(&expr_if.cond, callees, impls);
-            visit_block(&expr_if.then_branch, callees, impls);
+            visit_expr(&expr_if.cond, callees, impls, crate_name);
+            visit_block(&expr_if.then_branch, callees, impls, crate_name);
             if let Some((_, else_branch)) = &expr_if.else_branch {
                 match &**else_branch {
-                    Expr::Block(block) => visit_block(&block.block, callees, impls),
+                    Expr::Block(block) => visit_block(&block.block, callees, impls, crate_name),
                     Expr::If(else_if) => {
                         callees.push("else if(...)".to_string());
-                        visit_expr(&else_if.cond, callees, impls);
-                        visit_block(&else_if.then_branch, callees, impls);
+                        visit_expr(&else_if.cond, callees, impls, crate_name);
+                        visit_block(&else_if.then_branch, callees, impls, crate_name);
                     }
-                    other => visit_expr(other, callees, impls),
+                    other => visit_expr(other, callees, impls, crate_name),
                 }
             }
         }
         Expr::Match(expr_match) => {
             callees.push("match(...)".to_string());
-            visit_expr(&expr_match.expr, callees, impls);
+            visit_expr(&expr_match.expr, callees, impls, crate_name);
             for (i, arm) in expr_match.arms.iter().enumerate() {
                 let label = format!("match_arm_{}", i);
                 callees.push(label.clone());
-                visit_expr(&arm.body, callees, impls);
+                visit_expr(&arm.body, callees, impls, crate_name);
             }
         }
         _ => {}
     }
 }
 
-fn visit_block(block: &syn::Block, callees: &mut Vec<String>, impls: &Vec<(String, String)>) {
-    visit_stmts(&block.stmts, callees, impls);
+fn visit_block(
+    block: &syn::Block,
+    callees: &mut Vec<String>,
+    impls: &Vec<(String, String)>,
+    crate_name: &str,
+) {
+    visit_stmts(&block.stmts, callees, impls, crate_name);
 }
 
 pub struct DotExporter;
