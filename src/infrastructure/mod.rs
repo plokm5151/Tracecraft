@@ -1,5 +1,4 @@
-use syn::{Item, Stmt, Expr, ImplItem, Type, Pat};
-use std::collections::HashMap;
+use syn::{Item, Stmt, Expr, ImplItem, Type};
 use crate::domain::callgraph::{CallGraph, CallGraphNode};
 
 pub struct SimpleCallGraphBuilder;
