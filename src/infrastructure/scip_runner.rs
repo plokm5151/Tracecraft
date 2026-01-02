@@ -1,13 +1,45 @@
 /// SCIP Index Generator Runner.
 /// Invokes `rust-analyzer scip` to produce a Code Intelligence index.
+/// 
+/// Phase 3.2: Integrated with caching for incremental regeneration.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use anyhow::{Context, Result, bail};
+use super::scip_cache::ScipCache;
 
 /// Generate a SCIP index for the given workspace.
-/// Returns the path to the generated `index.scip` file.
+/// 
+/// If a valid cache exists (source files unchanged), returns the cached index.
+/// Otherwise, invokes `rust-analyzer scip` to generate a fresh index.
+/// 
+/// Returns the path to the `index.scip` file.
 pub fn generate_scip_index(workspace_root: &Path) -> Result<PathBuf> {
+    generate_scip_index_with_sources(workspace_root, &[])
+}
+
+/// Generate a SCIP index with explicit source file tracking for cache.
+pub fn generate_scip_index_with_sources(
+    workspace_root: &Path,
+    source_files: &[String],
+) -> Result<PathBuf> {
+    let cache = ScipCache::new(workspace_root);
+
+    // Check if cache is valid
+    if let Some(cached_path) = cache.get_valid_cache() {
+        return Ok(cached_path);
+    }
+
+    // Cache miss - need to regenerate
+    generate_fresh_index(workspace_root, &cache, source_files)
+}
+
+/// Force regeneration of the SCIP index, ignoring cache.
+pub fn generate_fresh_index(
+    workspace_root: &Path,
+    cache: &ScipCache,
+    source_files: &[String],
+) -> Result<PathBuf> {
     // Check if rust-analyzer is available
     let ra_check = Command::new("rust-analyzer")
         .arg("--version")
@@ -28,7 +60,7 @@ pub fn generate_scip_index(workspace_root: &Path) -> Result<PathBuf> {
     }
 
     // Run rust-analyzer scip command
-    let output_file = workspace_root.join("index.scip");
+    let output_file = cache.index_path().to_path_buf();
     
     println!("[SCIP] Generating index for: {}", workspace_root.display());
     
@@ -47,6 +79,13 @@ pub fn generate_scip_index(workspace_root: &Path) -> Result<PathBuf> {
 
     if !output_file.exists() {
         bail!("Expected index.scip was not created at: {}", output_file.display());
+    }
+
+    // Update cache metadata
+    if !source_files.is_empty() {
+        if let Err(e) = cache.update_metadata(source_files) {
+            eprintln!("[SCIP Cache] Warning: Failed to update metadata: {}", e);
+        }
     }
 
     println!("[SCIP] Generated index: {}", output_file.display());

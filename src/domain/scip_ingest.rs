@@ -51,21 +51,25 @@ impl ScipIngestor {
     /// 
     /// Uses parallel processing for both definition collection (Pass 1)
     /// and reference resolution (Pass 2).
+    /// 
+    /// Phase 3.3: Uses memory-mapped file I/O to avoid large allocations.
     pub fn ingest_and_build_graph(scip_path: &Path) -> Result<CallGraph> {
         use std::fs::File;
-        use std::io::Read;
+        use memmap2::Mmap;
         use protobuf::Message;
 
         println!("[SCIP Ingest] Loading index from: {}", scip_path.display());
         
-        // Read the SCIP index file
-        let mut file = File::open(scip_path)
+        // Memory-map the SCIP index file for efficient access
+        let file = File::open(scip_path)
             .context("Failed to open SCIP index file")?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .context("Failed to read SCIP index file")?;
         
-        let index = scip::types::Index::parse_from_bytes(&buffer)
+        // SAFETY: We assume the file won't be modified while we're reading it.
+        // The mmap provides a zero-copy view into the file.
+        let mmap = unsafe { Mmap::map(&file) }
+            .context("Failed to memory-map SCIP index file")?;
+        
+        let index = scip::types::Index::parse_from_bytes(&mmap)
             .context("Failed to parse SCIP index protobuf")?;
 
         // ═══════════════════════════════════════════════════════════════════

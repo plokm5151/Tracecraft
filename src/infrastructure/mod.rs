@@ -7,6 +7,7 @@ pub mod source_manager;
 pub mod expander;
 pub mod concurrency;
 pub mod scip_runner;
+pub mod scip_cache;
 
 use std::sync::Arc;
 
