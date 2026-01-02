@@ -1,4 +1,6 @@
+use syn::{Item, Stmt, Expr};
 use crate::domain::callgraph::{CallGraph, CallGraphNode};
+use crate::domain::index::SymbolIndex;
 
 pub mod project_loader;
 
@@ -6,31 +8,29 @@ pub struct SimpleCallGraphBuilder;
 
 impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
-        let mut impls = Vec::new();
+        // Step 1: Build the global symbol index
+        let index = SymbolIndex::build(files);
+        
         let mut func_defs = Vec::new();
 
+        // Step 2: Traverse files to build the graph
         for (crate_name, file, code) in files {
+             // We can re-parse here or cache the ASTs. For simplicity/memory trade-off, we re-parse.
+             // Given build() consumed the files slice to read them, we assume it's cheap enough for now 
+             // (or we could have let build take ASTs, but that complicates the API).
+             // Actually index.rs parses `syn::parse_file` inside. We duplicate parsing here. 
+             // Optimization for later: parse once.
+             
             let ast_file = syn::parse_file(code).expect("Parse error");
-            // 收集 impl
-            for item in &ast_file.items {
-                if let Item::Impl(imp) = item {
-                    if let Type::Path(tp) = &*imp.self_ty {
-                        let type_name = tp.path.segments.last().unwrap().ident.to_string();
-                        for ii in &imp.items {
-                            if let ImplItem::Fn(f) = ii {
-                                let method_name = f.sig.ident.to_string();
-                                impls.push((type_name.clone(), method_name));
-                            }
-                        }
-                    }
-                }
-            }
-            // 收集 fn
+
             for item in &ast_file.items {
                 if let Item::Fn(func) = item {
                     let name = func.sig.ident.to_string();
                     let mut callees = vec![];
-                    visit_stmts(&func.block.stmts, &mut callees, &impls, crate_name);
+                    
+                    // Pass index instead of impls list
+                    visit_stmts(&func.block.stmts, &mut callees, &index, crate_name);
+                    
                     let line = func.sig.ident.span().start().line;
                     let label = Some(format!("{}:{}", file, line));
                     func_defs.push((name, crate_name.clone(), "".to_string(), callees, label));
@@ -42,7 +42,7 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
         let nodes = func_defs.into_iter()
             .map(|(name, crate_name, _path, callees, label)| {
                 CallGraphNode {
-                    id: format!("{}@{}", name, crate_name),
+                    id: format!("{}@{}", name, crate_name), // Canonical ID for entry points
                     callees,
                     label,
                 }
@@ -56,12 +56,12 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
 fn visit_stmts(
     stmts: &Vec<Stmt>,
     callees: &mut Vec<String>,
-    impls: &Vec<(String, String)>,
+    index: &SymbolIndex,
     crate_name: &str,
 ) {
     for stmt in stmts {
         match stmt {
-            Stmt::Expr(expr, _) => visit_expr(expr, callees, impls, crate_name),
+            Stmt::Expr(expr, _) => visit_expr(expr, callees, index, crate_name),
             _ => {}
         }
     }
@@ -70,7 +70,7 @@ fn visit_stmts(
 fn visit_expr(
     expr: &Expr,
     callees: &mut Vec<String>,
-    impls: &Vec<(String, String)>,
+    index: &SymbolIndex,
     crate_name: &str,
 ) {
     match expr {
@@ -78,11 +78,20 @@ fn visit_expr(
             if let Expr::Path(ref expr_path) = *expr_call.func {
                 let segments: Vec<_> = expr_path.path.segments.iter().map(|s| s.ident.to_string()).collect();
                 if !segments.is_empty() {
+                    // Try to resolve global function: crate::mod::func
+                    // Currently we don't have full path resolution (imports), 
+                    // so we do a best-effort guess or strictly rely on our simplified index keys (crate::func) 
+                    // OR just default "name@crate".
+                    
+                    // If it looks like "func", we assume local or same-crate.
+                    // If "mod::func", we check if we can resolve it.
+                    // For Stage 2, let's keep the existing logic:
+                    // format!("{}@{}", segments.join("::"), crate_name)
                     callees.push(format!("{}@{}", segments.join("::"), crate_name));
                 }
             }
             for arg in &expr_call.args {
-                visit_expr(arg, callees, impls, crate_name);
+                visit_expr(arg, callees, index, crate_name);
             }
         }
         Expr::MethodCall(expr_method) => {
@@ -92,51 +101,57 @@ fn visit_expr(
                 Expr::Path(expr_path) => expr_path.path.segments.last().map(|s| s.ident.to_string()),
                 _ => None,
             };
+            
+            let mut resolved = false;
             if let Some(rt) = &receiver_type {
-                let mut found = false;
-                for (type_name, method) in impls {
-                    if type_name == rt && method == &method_name {
-                        let callee_id = format!("{}::{}@{}", type_name, method_name, crate_name);
-                        callees.push(callee_id);
-                        found = true;
-                        break;
-                    }
+                // Lookup in Semantic Index
+                if let Some(sig) = index.type_methods.get(&(rt.clone(), method_name.clone())) {
+                     // Found it! Use canonical ID.
+                     // Format: Type::Method@DefiningCrate
+                     let callee_id = format!("{}::{}@{}", rt, method_name, sig.crate_name);
+                     callees.push(callee_id);
+                     resolved = true;
                 }
-                if !found {
+            }
+            
+            if !resolved {
+                // Fallback: assume local or unknown
+                if let Some(rt) = receiver_type {
                     callees.push(format!("{}::{}@{}", rt, method_name, crate_name));
+                } else {
+                    callees.push(format!("{}@{}", method_name, crate_name));
                 }
-            } else {
-                callees.push(format!("{}@{}", method_name, crate_name));
             }
+            
             for arg in &expr_method.args {
-                visit_expr(arg, callees, impls, crate_name);
+                visit_expr(arg, callees, index, crate_name);
             }
-            visit_expr(&expr_method.receiver, callees, impls, crate_name);
+            visit_expr(&expr_method.receiver, callees, index, crate_name);
         }
-        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, impls, crate_name),
+        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, index, crate_name),
         Expr::If(expr_if) => {
             callees.push("if(...)".to_string());
-            visit_expr(&expr_if.cond, callees, impls, crate_name);
-            visit_block(&expr_if.then_branch, callees, impls, crate_name);
+            visit_expr(&expr_if.cond, callees, index, crate_name);
+            visit_block(&expr_if.then_branch, callees, index, crate_name);
             if let Some((_, else_branch)) = &expr_if.else_branch {
                 match &**else_branch {
-                    Expr::Block(block) => visit_block(&block.block, callees, impls, crate_name),
+                    Expr::Block(block) => visit_block(&block.block, callees, index, crate_name),
                     Expr::If(else_if) => {
                         callees.push("else if(...)".to_string());
-                        visit_expr(&else_if.cond, callees, impls, crate_name);
-                        visit_block(&else_if.then_branch, callees, impls, crate_name);
+                        visit_expr(&else_if.cond, callees, index, crate_name);
+                        visit_block(&else_if.then_branch, callees, index, crate_name);
                     }
-                    other => visit_expr(other, callees, impls, crate_name),
+                    other => visit_expr(other, callees, index, crate_name),
                 }
             }
         }
         Expr::Match(expr_match) => {
             callees.push("match(...)".to_string());
-            visit_expr(&expr_match.expr, callees, impls, crate_name);
+            visit_expr(&expr_match.expr, callees, index, crate_name);
             for (i, arm) in expr_match.arms.iter().enumerate() {
                 let label = format!("match_arm_{}", i);
                 callees.push(label.clone());
-                visit_expr(&arm.body, callees, impls, crate_name);
+                visit_expr(&arm.body, callees, index, crate_name);
             }
         }
         _ => {}
@@ -146,10 +161,10 @@ fn visit_expr(
 fn visit_block(
     block: &syn::Block,
     callees: &mut Vec<String>,
-    impls: &Vec<(String, String)>,
+    index: &SymbolIndex,
     crate_name: &str,
 ) {
-    visit_stmts(&block.stmts, callees, impls, crate_name);
+    visit_stmts(&block.stmts, callees, index, crate_name);
 }
 
 pub struct DotExporter;
