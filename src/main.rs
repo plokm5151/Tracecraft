@@ -7,6 +7,7 @@ use tracecraft::infrastructure::project_loader::ProjectLoader;
 use tracecraft::infrastructure::source_manager::SourceManager;
 use tracecraft::infrastructure::concurrency;
 use tracecraft::domain::trace::TraceGenerator;
+use tracecraft::domain::language::Language;
 use tracecraft::ports::{CallGraphBuilder, OutputExporter};
 
 #[derive(Parser, Debug)]
@@ -59,6 +60,10 @@ struct Cli {
     /// Analysis engine: "syn" (default, AST-based) or "scip" (rust-analyzer semantic)
     #[arg(long, default_value = "syn")]
     engine: String,
+
+    /// Programming language: "rust" (default) or "python"
+    #[arg(long, default_value = "rust")]
+    lang: String,
 }
 
 fn main() {
@@ -76,20 +81,30 @@ fn main() {
     // Branch based on engine selection
     let (callgraph, files) = match cli.engine.as_str() {
         "scip" => {
-            // SCIP Engine: Use rust-analyzer for precise semantic analysis
-            println!("[Engine] Using SCIP (rust-analyzer semantic analysis)");
+            // SCIP Engine: Use language-specific indexer for precise semantic analysis
+            let language = Language::from_str(&cli.lang).unwrap_or(Language::Rust);
+            println!("[Engine] Using SCIP ({} semantic analysis)", language);
             
             let workspace_path = cli.workspace.as_ref()
                 .map(|ws| std::path::Path::new(ws).parent().unwrap_or(std::path::Path::new(".")))
                 .unwrap_or(std::path::Path::new("."));
             
-            // Generate SCIP index
-            let scip_path = match tracecraft::infrastructure::scip_runner::generate_scip_index(workspace_path) {
+            // Generate SCIP index for the specified language
+            let scip_path = match tracecraft::infrastructure::scip_runner::generate_scip_index_for_language(
+                workspace_path, 
+                language,
+                &[]
+            ) {
                 Ok(path) => path,
                 Err(e) => {
                     eprintln!("Error generating SCIP index: {}", e);
-                    eprintln!("Falling back to syn engine...");
-                    return run_syn_engine(&cli);
+                    if language == Language::Rust {
+                        eprintln!("Falling back to syn engine...");
+                        return run_syn_engine(&cli);
+                    } else {
+                        eprintln!("No fallback available for {} (syn only supports Rust)", language);
+                        std::process::exit(1);
+                    }
                 }
             };
             
