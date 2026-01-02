@@ -46,6 +46,10 @@ struct Cli {
     /// Enable debug output
     #[arg(long, short='D')]
     debug: bool,
+
+    /// Expand macros using `cargo expand` before analysis
+    #[arg(long)]
+    expand_macros: bool,
 }
 
 fn main() {
@@ -59,7 +63,7 @@ fn main() {
 
     // workspace (primary method)
     if let Some(ws) = &cli.workspace {
-        match ProjectLoader::load_workspace(ws) {
+        match ProjectLoader::load_workspace(ws, cli.expand_macros) {
             Ok(loaded_files) => {
                 println!("Loaded {} files from workspace", loaded_files.len());
                 files.extend(loaded_files);

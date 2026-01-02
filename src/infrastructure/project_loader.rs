@@ -17,26 +17,55 @@ impl ProjectLoader {
 
         let mut files = Vec::new();
 
-        for package_id in &metadata.workspace_members {
-            if let Some(package) = metadata.packages.iter().find(|p| &p.id == package_id) {
-                let crate_name = &package.name;
-                
-                // Find source root (usually src/)
-                // We assume standard layout or look at targets.
-                // A better way is to look at package.targets -> src_path
-                for target in &package.targets {
-                    // We typically care about 'lib' and 'bin' targets for source code analysis
-                    if !target.kind.iter().any(|k| k == "lib" || k == "bin" || k == "proc-macro") {
-                       continue; 
+        for package in metadata.workspace_packages() {
+            let crate_name = &package.name;
+            
+            // Skip if no targets or irrelevant (though workspace_packages usually are relevant)
+             for target in &package.targets {
+                if target.kind.iter().any(|k| k == "lib" || k == "bin" || k == "proc-macro") {
+                    // Logic Branch: Expand Macros vs Raw Files
+                    if expand_macros {
+                         // SINGLE file per target/crate? 
+                         // cargo expand works per crate (or specific target). 
+                         // Simple usage: cargo expand --manifest-path package/Cargo.toml
+                         // But we are at workspace level. We might need package manifest.
+                         let package_manifest = &package.manifest_path;
+                         
+                         // Note: running cargo expand for EACH package.
+                         // Optimization: cargo expand runs the whole crate.
+                         // We probably only want to run it once per package.
+                         
+                         // We are inside a loop over TARGETS. We should loop over PACKAGES.
+                         // The outer loop IS package.
+                         // Just break after doing it once per package? Or careful with multiple targets?
+                         // cargo expand usually expands the library by default or bin if specified.
+                         // For simplicity, let's try to expand the package.
+                         
+                         // Check if we already processed this package (simple dedup if targets iterate same package multiple times - wait, workspace_packages() returns unique packages)
+                         // But we are iterating targets inside.
+                         
+                         // Let's perform expansion on the *first* interesting target and skip others for this package?
+                         // Or better: move expansion logic outside target loop.
+                    } else {
+                        let src_path = &target.src_path;
+                        let src_dir = src_path.parent().unwrap_or(src_path);
+                        Self::collect_rs_recursive(src_dir.as_std_path(), crate_name, &mut files)?;
                     }
-                    
-                    let src_path = &target.src_path;
-                    let src_dir = src_path.parent().unwrap_or(src_path);
-                    
-                    // Now recursively find all .rs files in this src_dir
-                    // Note: target.src_path is an Utf8PathBuf from cargo_metadata
-                    
-                    Self::collect_rs_recursive(src_dir.as_std_path(), crate_name, &mut files)?;
+                }
+            }
+            
+            // Handling Expansion Outside Target Loop to avoid duplicates
+            if expand_macros {
+                // We attempt to expand the whole package
+                match crate::infrastructure::expander::expand_crate(package.manifest_path.as_str()) {
+                    Ok(expanded_code) => {
+                         // We treat the expanded result as a single "virtual" file for this crate.
+                         files.push((crate_name.clone(), format!("<expanded:{}>", crate_name), expanded_code));
+                    },
+                    Err(e) => {
+                        eprintln!("WARN: Failed to expand crate {}: {}", crate_name, e);
+                        // Fallback? Or just warn? Warn is safer.
+                    }
                 }
             }
         }
