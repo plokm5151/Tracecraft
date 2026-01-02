@@ -15,6 +15,18 @@ pub struct CallGraph {
     pub nodes: Vec<CallGraphNode>,
 }
 
+impl CallGraph {
+    pub fn new(nodes: Vec<CallGraphNode>) -> Self {
+        Self { nodes }
+    }
+
+    pub fn add_edge(&mut self, caller_id: &str, callee_id: &str) {
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == caller_id) {
+            node.callees.push(callee_id.to_string());
+        }
+    }
+}
+
 /// Call graph for a single file.
 pub struct FileCallGraph {
     pub filename: String,

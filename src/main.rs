@@ -86,8 +86,19 @@ fn main() {
     if files.is_empty(){panic!("No input provided");}
 
     // ── 2. **唯一一次** 建圖 ─────────────────
-    let cg_builder=SimpleCallGraphBuilder{};
-    let callgraph=cg_builder.build_call_graph(&files);
+    // Initialize storage backend
+    let store: std::sync::Arc<dyn tracecraft::domain::store::SymbolStore> = match cli.store.as_str() {
+        "disk" => {
+            let db_path = "tracecraft_db";
+            std::sync::Arc::new(tracecraft::domain::store::DiskSymbolStore::new(db_path).expect("Failed to open disk store"))
+        }
+        _ => std::sync::Arc::new(tracecraft::domain::store::MemorySymbolStore::default()),
+    };
+
+    println!("Using storage backend: {}", cli.store);
+
+    let cg_builder = SimpleCallGraphBuilder::new_with_store(store);
+    let callgraph = cg_builder.build_call_graph(&files);
 
     // for quick lookup
     let mut map=HashMap::new(); for n in &callgraph.nodes{map.insert(n.id.clone(),n);}

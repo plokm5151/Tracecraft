@@ -6,31 +6,65 @@ pub mod project_loader;
 pub mod source_manager;
 pub mod expander;
 
-pub struct SimpleCallGraphBuilder;
+use std::sync::Arc;
+
+pub struct SimpleCallGraphBuilder {
+    pub store: Option<Arc<dyn crate::domain::store::SymbolStore>>,
+}
 
 impl SimpleCallGraphBuilder {
-    pub fn build_from_asts(&self, index: &SymbolIndex, asts: &[(String, String, syn::File)]) -> CallGraph {
+    pub fn new() -> Self {
+        Self { store: None }
+    }
+
+    pub fn new_with_store(store: Arc<dyn crate::domain::store::SymbolStore>) -> Self {
+        Self { store: Some(store) }
+    }
+}
+
+impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
+    fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
+        // Step 1: Build the global symbol index
+        // Use injected store or default to MemorySymbolStore
+        let store = self.store.clone().unwrap_or_else(|| {
+            Arc::new(crate::domain::store::MemorySymbolStore::default())
+        });
+        
+        let (index, errors) = SymbolIndex::build(files, store);
+        
+        if !errors.is_empty() {
+             eprintln!(" WARN: Encountered {} parse errors:", errors.len());
+             for e in &errors {
+                 eprintln!("  - {}: {}", e.file, e.error);
+             }
+        }
+
         let mut func_defs = Vec::new();
 
-        // Step 1: Collect all potential nodes (functions and methods)
-        for (crate_name, file, ast) in asts {
+        // Step 2: Re-parse files to collect nodes (since we can't share ASTs across threads efficiently yet)
+        let asts: Vec<(String, String, syn::File)> = files.iter().filter_map(|(crate_name, file_path, code)| {
+            match syn::parse_file(code) {
+                Ok(ast) => Some((crate_name.clone(), file_path.clone(), ast)),
+                Err(_) => None // Errors already logged
+            }
+        }).collect();
+
+        // Step 3: Collect Nodes
+        for (crate_name, file, ast) in &asts {
             for item in &ast.items {
                  if let Item::Fn(func) = item {
-                     // Register node
                      let name = func.sig.ident.to_string();
-                     // Use unique ID from index logic: crate::func
                      let id = format!("{}::{}", crate_name, name);
-                     let label = Some(format!("{}::{}", crate_name, name)); // Label is Option<String>
+                     let label = Some(format!("{}::{}", crate_name, name));
                      
                      func_defs.push(CallGraphNode {
-                         id: id.clone(),
-                         callees: Vec::new(), // Initialize with empty callees
+                         id,
+                         callees: Vec::new(),
                          label,
+                         // We could store file/line in CallGraphNode if expanded, for now sticking to struct definition
                      });
                  }
-                 // Handle Impl blocks
                  if let Item::Impl(imp) = item {
-                     // Try to resolve Type
                      if let syn::Type::Path(tp) = &*imp.self_ty {
                          if let Some(segment) = tp.path.segments.last() {
                              let type_name = segment.ident.to_string();
@@ -38,11 +72,11 @@ impl SimpleCallGraphBuilder {
                                  if let syn::ImplItem::Fn(method) = item {
                                      let method_name = method.sig.ident.to_string();
                                      let id = format!("{}::{}@{}", type_name, method_name, crate_name);
-                                     let label = Some(format!("{}::{}", type_name, method_name)); // Label is Option<String>
+                                     let label = Some(format!("{}::{}", type_name, method_name));
                                      
                                      func_defs.push(CallGraphNode {
                                          id, 
-                                         callees: Vec::new(), // Initialize with empty callees
+                                         callees: Vec::new(),
                                          label,
                                      });
                                  }
@@ -53,18 +87,18 @@ impl SimpleCallGraphBuilder {
             }
         }
 
-        // Create a CallGraph from the collected nodes.
-        // The CallGraph constructor will likely convert this Vec<CallGraphNode> into a HashMap for efficient lookup.
-        let mut graph = CallGraph::new_from_nodes(func_defs);
+        let mut graph = CallGraph::new(func_defs);
 
-        // Step 2: Analyze bodies to add edges
-        for (crate_name, _, ast) in asts {
-             self.visit_ast_items(&ast.items, &mut graph, index, crate_name);
+        // Step 4: Add Edges
+        for (crate_name, _, ast) in &asts {
+             self.visit_ast_items(&ast.items, &mut graph, &index, crate_name);
         }
 
         graph
     }
+}
 
+impl SimpleCallGraphBuilder {
     fn visit_ast_items(&self, items: &[Item], graph: &mut CallGraph, index: &SymbolIndex, crate_name: &str) {
         for item in items {
             match item {
@@ -72,7 +106,7 @@ impl SimpleCallGraphBuilder {
                      let caller_id = format!("{}::{}", crate_name, func.sig.ident);
                      let mut callees = Vec::new();
                      for stmt in &func.block.stmts {
-                         visit_stmt(stmt, &mut callees, index, crate_name); // Changed to visit_stmt
+                         visit_stmt(stmt, &mut callees, index, crate_name);
                      }
                      for callee in callees {
                          graph.add_edge(&caller_id, &callee);
@@ -88,7 +122,7 @@ impl SimpleCallGraphBuilder {
                                      let caller_id = format!("{}::{}@{}", type_name, method_name, crate_name);
                                      let mut callees = Vec::new();
                                      for stmt in &method.block.stmts {
-                                         visit_stmt(stmt, &mut callees, index, crate_name); // Changed to visit_stmt
+                                         visit_stmt(stmt, &mut callees, index, crate_name);
                                      }
                                      for callee in callees {
                                          graph.add_edge(&caller_id, &callee);
@@ -109,35 +143,20 @@ impl SimpleCallGraphBuilder {
     }
 }
 
-impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
-    fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
-        // Step 1: Build the global symbol index
-        // We now get index + cached ASTs + errors
-        let (index, asts, errors) = SymbolIndex::build(files);
-        
-        if !errors.is_empty() {
-             eprintln!(" WARN: Encountered {} parse errors:", errors.len());
-             for e in &errors {
-                 eprintln!("  - {}: {}", e.file, e.error);
-             }
-        }
-        
-
-
-        // Use the new build_from_asts method
-        self.build_from_asts(&index, &asts)
-    }
-}
-
 // 遍歷語法樹、分析函式呼叫
-fn visit_stmt( // Renamed from visit_stmts to visit_stmt
-    stmt: &Stmt, // Changed from &Vec<Stmt> to &Stmt
+fn visit_stmt(
+    stmt: &Stmt,
     callees: &mut Vec<String>,
     index: &SymbolIndex,
     crate_name: &str,
 ) {
     match stmt {
         Stmt::Expr(expr, _) => visit_expr(expr, callees, index, crate_name),
+        Stmt::Local(local) => {
+             if let Some((_, expr)) = &local.init {
+                 visit_expr(expr, callees, index, crate_name);
+             }
+        }
         _ => {}
     }
 }
@@ -217,7 +236,7 @@ fn visit_expr(
             }
             visit_expr(&expr_method.receiver, callees, index, crate_name);
         }
-        Expr::Block(expr_block) => visit_stmts(&expr_block.block.stmts, callees, index, crate_name),
+        Expr::Block(expr_block) => visit_block(&expr_block.block, callees, index, crate_name),
         Expr::If(expr_if) => {
             callees.push("if(...)".to_string());
             visit_expr(&expr_if.cond, callees, index, crate_name);
@@ -225,10 +244,9 @@ fn visit_expr(
             if let Some((_, else_branch)) = &expr_if.else_branch {
                 match &**else_branch {
                     Expr::Block(block) => visit_block(&block.block, callees, index, crate_name),
-                    Expr::If(else_if) => {
+                    Expr::If(else_if) => { // This is an Expr::If, so recursive call `visit_expr` NOT `visit_stmts`
                         callees.push("else if(...)".to_string());
-                        visit_expr(&else_if.cond, callees, index, crate_name);
-                        visit_block(&else_if.then_branch, callees, index, crate_name);
+                         visit_expr(else_if, callees, index, crate_name);
                     }
                     other => visit_expr(other, callees, index, crate_name),
                 }
@@ -253,7 +271,9 @@ fn visit_block(
     index: &SymbolIndex,
     crate_name: &str,
 ) {
-    visit_stmts(&block.stmts, callees, index, crate_name);
+    for stmt in &block.stmts {
+        visit_stmt(stmt, callees, index, crate_name);
+    }
 }
 
 pub struct DotExporter;
