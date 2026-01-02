@@ -24,9 +24,9 @@ struct Cli {
     #[arg(long)]
     workspace: Option<String>,
 
-    /// output path
+    /// output path (required for command line mode)
     #[arg(short, long)]
-    output: String,
+    output: Option<String>,
 
     /// output format (ignored for now)
     #[arg(short, long, default_value="dot")]
@@ -63,6 +63,14 @@ struct Cli {
     /// Programming language: "rust" (default) or "python"
     #[arg(long, default_value = "rust")]
     lang: String,
+
+    /// Run as a persistence daemon for IPC
+    #[arg(long)]
+    daemon: bool,
+
+    /// TCP port for daemon mode (default: 4545)
+    #[arg(long, default_value = "4545")]
+    port: u16,
 }
 
 fn main() {
@@ -72,6 +80,28 @@ fn main() {
     }
 
     let cli=Cli::parse();
+
+    // ── Daemon Mode ───────────────────────────
+    if cli.daemon {
+        use mr_hedgehog::api::server;
+        if let Err(e) = server::start_server(cli.port) {
+            eprintln!("Daemon server failed: {}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // ── Normal CLI Mode ───────────────────────
+    
+    // Validate required args for CLI mode
+    if cli.output.is_none() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        cmd.error(
+            clap::error::ErrorKind::MissingRequiredArgument,
+            "The following required arguments were not provided:\n  --output <OUTPUT>"
+        ).exit();
+    }
 
     if cli.debug {
         println!("[DEBUG] Config: {:?}", cli);
@@ -279,8 +309,9 @@ fn run_post_processing(cli: &Cli, callgraph: &mr_hedgehog::domain::callgraph::Ca
     }
 
     // ── 4. export dot ────────────────────────
+    let output_path = cli.output.as_ref().unwrap();
     let exporter=DotExporter{};
-    exporter.export(&callgraph,&cli.output).unwrap();
-    println!("Graph saved to {}",cli.output);
+    exporter.export(&callgraph, output_path).unwrap();
+    println!("Graph saved to {}", output_path);
 }
 
