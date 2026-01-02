@@ -112,13 +112,17 @@ impl SimpleCallGraphBuilder {
 impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
     fn build_call_graph(&self, files: &[(String, String, String)]) -> CallGraph {
         // Step 1: Build the global symbol index
-        let index = SymbolIndex::build(files);
+        // We now get index + cached ASTs + errors
+        let (index, asts, errors) = SymbolIndex::build(files);
         
-        // Parse all files into ASTs
-        let asts: Vec<(String, String, syn::File)> = files.iter().map(|(crate_name, file_path, code)| {
-            let ast_file = syn::parse_file(code).expect("Parse error");
-            (crate_name.clone(), file_path.clone(), ast_file)
-        }).collect();
+        if !errors.is_empty() {
+             eprintln!(" WARN: Encountered {} parse errors:", errors.len());
+             for e in &errors {
+                 eprintln!("  - {}: {}", e.file, e.error);
+             }
+        }
+        
+
 
         // Use the new build_from_asts method
         self.build_from_asts(&index, &asts)

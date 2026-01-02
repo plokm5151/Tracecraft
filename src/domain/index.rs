@@ -37,31 +37,42 @@ impl Default for SymbolIndex {
 }
 
 impl SymbolIndex {
-    /// Build the symbol index from source files in parallel and return the parsed ASTs.
-    /// This enables "Parse Once" optimization: the ASTs are reused by the graph builder.
-    pub fn build(sources: &[(String, String, String)]) -> (Self, Vec<(String, String, syn::File)>) {
+#[derive(Debug, Clone)]
+pub struct AnalysisError {
+    pub file: String,
+    pub error: String,
+}
+
+impl SymbolIndex {
+    /// Build the symbol index from source files in parallel and return the parsed ASTs and any errors.
+    /// This enables "Parse Once" optimization and robust error aggregation.
+    pub fn build(sources: &[(String, String, String)]) -> (Self, Vec<(String, String, syn::File)>, Vec<AnalysisError>) {
         let index = SymbolIndex::default();
 
-        // Parallel parsing and AST collection
-        let results: Vec<Option<(String, String, syn::File)>> = sources.par_iter()
+        // Parallel parsing and AST collection with result partitioning
+        let (asts, errors): (Vec<_>, Vec<_>) = sources.par_iter()
             .map(|(crate_name, file_path, code)| {
                 match syn::parse_file(code) {
                     Ok(ast) => {
                         index.index_items(crate_name, file_path, &ast.items);
-                        Some((crate_name.clone(), file_path.clone(), ast))
+                        (Some((crate_name.clone(), file_path.clone(), ast)), None)
                     }
                     Err(e) => {
-                        eprintln!("WARN: Failed to parse {}: {}", file_path, e);
-                        None
+                        (None, Some(AnalysisError {
+                            file: file_path.clone(),
+                            error: e.to_string(),
+                        }))
                     }
                 }
             })
-            .collect();
+            // Iterate and collect into two separate vectors
+            .unzip();
 
-        // Flatten results, discarding failures
-        let asts: Vec<(String, String, syn::File)> = results.into_iter().flatten().collect();
+        // Flatten Option wrappers
+        let valid_asts: Vec<(String, String, syn::File)> = asts.into_iter().flatten().collect();
+        let collected_errors: Vec<AnalysisError> = errors.into_iter().flatten().collect();
 
-        (index, asts)
+        (index, valid_asts, collected_errors)
     }
 
     /// Find all methods with a given name (for conservative resolution).
