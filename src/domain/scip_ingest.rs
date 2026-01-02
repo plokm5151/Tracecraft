@@ -1,9 +1,13 @@
 /// SCIP Index Ingestor.
 /// Parses SCIP indices and builds a precise CallGraph using semantic information.
+/// 
+/// Phase 3.1: Parallel processing with rayon and DashMap for high performance.
 
-use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::{Context, Result};
+use dashmap::DashMap;
+use rayon::prelude::*;
 
 use crate::domain::callgraph::{CallGraph, CallGraphNode};
 
@@ -44,6 +48,9 @@ pub struct ScipIngestor;
 
 impl ScipIngestor {
     /// Ingest a SCIP index file and build a CallGraph.
+    /// 
+    /// Uses parallel processing for both definition collection (Pass 1)
+    /// and reference resolution (Pass 2).
     pub fn ingest_and_build_graph(scip_path: &Path) -> Result<CallGraph> {
         use std::fs::File;
         use std::io::Read;
@@ -61,14 +68,19 @@ impl ScipIngestor {
         let index = scip::types::Index::parse_from_bytes(&buffer)
             .context("Failed to parse SCIP index protobuf")?;
 
-        // Pass 1: Collect all Definitions per file
-        // Map: file_path -> Vec<DefinitionInfo>
-        let mut definitions_by_file: HashMap<String, Vec<DefinitionInfo>> = HashMap::new();
-        // Map: symbol -> node_id (for CallGraph)
-        let mut symbol_to_node: HashMap<String, usize> = HashMap::new();
-        let mut nodes: Vec<CallGraphNode> = Vec::new();
+        // ═══════════════════════════════════════════════════════════════════
+        // Pass 1: Parallel Definition Collection
+        // ═══════════════════════════════════════════════════════════════════
+        
+        // Thread-safe maps for parallel access
+        let definitions_by_file: DashMap<String, Vec<DefinitionInfo>> = DashMap::new();
+        let symbol_to_node: DashMap<String, usize> = DashMap::new();
+        let node_counter = AtomicUsize::new(0);
+        
+        // Collect nodes in parallel (we'll sort them later)
+        let node_data: DashMap<usize, CallGraphNode> = DashMap::new();
 
-        for document in &index.documents {
+        index.documents.par_iter().for_each(|document| {
             let file_path = document.relative_path.clone();
             let mut file_defs: Vec<DefinitionInfo> = Vec::new();
 
@@ -79,20 +91,22 @@ impl ScipIngestor {
                 if is_definition && !occurrence.symbol.is_empty() {
                     let range = parse_scip_range(&occurrence.range);
                     
-                    // Create a node for this definition if we haven't seen it
-                    if !symbol_to_node.contains_key(&occurrence.symbol) {
-                        let node_id = nodes.len();
-                        symbol_to_node.insert(occurrence.symbol.clone(), node_id);
-                        
-                        // Extract a human-readable label from the symbol
-                        let label = extract_label_from_symbol(&occurrence.symbol);
-                        
-                        nodes.push(CallGraphNode {
-                            id: occurrence.symbol.clone(),
-                            callees: Vec::new(),
-                            label: Some(label),
+                    // Atomically get or create node ID for this symbol
+                    let node_id = *symbol_to_node
+                        .entry(occurrence.symbol.clone())
+                        .or_insert_with(|| {
+                            let id = node_counter.fetch_add(1, Ordering::SeqCst);
+                            let label = extract_label_from_symbol(&occurrence.symbol);
+                            node_data.insert(id, CallGraphNode {
+                                id: occurrence.symbol.clone(),
+                                callees: Vec::new(),
+                                label: Some(label),
+                            });
+                            id
                         });
-                    }
+
+                    // We don't use node_id here directly, just ensure it's registered
+                    let _ = node_id;
 
                     file_defs.push(DefinitionInfo {
                         symbol: occurrence.symbol.clone(),
@@ -111,16 +125,25 @@ impl ScipIngestor {
             });
 
             definitions_by_file.insert(file_path, file_defs);
-        }
+        });
 
-        println!("[SCIP Ingest] Found {} definitions", nodes.len());
+        let def_count = node_counter.load(Ordering::SeqCst);
+        println!("[SCIP Ingest] Found {} definitions (parallel)", def_count);
 
-        // Pass 2: Find References and create edges
-        let mut edge_count = 0;
+        // ═══════════════════════════════════════════════════════════════════
+        // Pass 2: Parallel Reference Resolution
+        // ═══════════════════════════════════════════════════════════════════
         
-        for document in &index.documents {
+        let edge_counter = AtomicUsize::new(0);
+
+        index.documents.par_iter().for_each(|document| {
             let file_path = &document.relative_path;
-            let file_defs = definitions_by_file.get(file_path).cloned().unwrap_or_default();
+            
+            // Get definitions for this file (if any)
+            let file_defs = definitions_by_file
+                .get(file_path)
+                .map(|r| r.clone())
+                .unwrap_or_default();
 
             for occurrence in &document.occurrences {
                 // Check if this is a Reference (not a definition)
@@ -133,16 +156,18 @@ impl ScipIngestor {
                     // Find the enclosing definition (the caller)
                     for def in &file_defs {
                         if def.range.contains(&ref_range) {
-                            // This definition contains the reference
                             let caller_symbol = &def.symbol;
                             
                             // Add edge: caller -> callee
-                            if let Some(&caller_idx) = symbol_to_node.get(caller_symbol) {
-                                // Avoid self-references and duplicates
+                            if let Some(caller_idx) = symbol_to_node.get(caller_symbol) {
+                                // Avoid self-references
                                 if caller_symbol != callee_symbol {
-                                    if !nodes[caller_idx].callees.contains(callee_symbol) {
-                                        nodes[caller_idx].callees.push(callee_symbol.clone());
-                                        edge_count += 1;
+                                    // Thread-safe edge insertion
+                                    if let Some(mut node) = node_data.get_mut(&*caller_idx) {
+                                        if !node.callees.contains(callee_symbol) {
+                                            node.callees.push(callee_symbol.clone());
+                                            edge_counter.fetch_add(1, Ordering::Relaxed);
+                                        }
                                     }
                                 }
                             }
@@ -151,9 +176,24 @@ impl ScipIngestor {
                     }
                 }
             }
-        }
+        });
 
-        println!("[SCIP Ingest] Created {} edges", edge_count);
+        let edge_count = edge_counter.load(Ordering::Relaxed);
+        println!("[SCIP Ingest] Created {} edges (parallel)", edge_count);
+
+        // ═══════════════════════════════════════════════════════════════════
+        // Finalize: Convert DashMap to sorted Vec
+        // ═══════════════════════════════════════════════════════════════════
+        
+        let mut nodes: Vec<CallGraphNode> = node_data
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(_, node)| node)
+            .collect();
+        
+        // Sort by ID for deterministic output
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
 
         Ok(CallGraph { nodes })
     }

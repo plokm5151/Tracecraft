@@ -13,15 +13,19 @@ pub fn generate_scip_index(workspace_root: &Path) -> Result<PathBuf> {
         .arg("--version")
         .output();
     
-    if ra_check.is_err() || !ra_check.as_ref().unwrap().status.success() {
+    if let Ok(output) = ra_check {
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout);
+            println!("[SCIP] Using rust-analyzer: {}", version.trim());
+        } else {
+             bail!("rust-analyzer found but returned error: {:?}", output.status.code());
+        }
+    } else {
         bail!(
             "rust-analyzer not found in PATH. Please install it: \
              https://rust-analyzer.github.io/manual.html#installation"
         );
     }
-
-    let version = String::from_utf8_lossy(&ra_check.unwrap().stdout);
-    println!("[SCIP] Using rust-analyzer: {}", version.trim());
 
     // Run rust-analyzer scip command
     let output_file = workspace_root.join("index.scip");

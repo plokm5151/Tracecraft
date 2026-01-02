@@ -155,8 +155,8 @@ fn visit_stmt(
     match stmt {
         Stmt::Expr(expr, _) => visit_expr(expr, callees, index, crate_name),
         Stmt::Local(local) => {
-             if let Some((_, expr)) = &local.init {
-                 visit_expr(expr, callees, index, crate_name);
+             if let Some(init) = &local.init {
+                 visit_expr(&init.expr, callees, index, crate_name);
              }
         }
         _ => {}
@@ -202,9 +202,8 @@ fn visit_expr(
 
             // Strategy 1: Exact match via inferred type
             if let Some(rt) = &receiver_type {
-                let key = (rt.clone(), method_name.clone());
-                if let Some(sig_ref) = index.type_methods.get(&key) {
-                     // Found it! Use canonical ID. Dereference the Ref guard.
+                if let Some(sig_ref) = index.store.get_method(rt, &method_name) {
+                     // Found it! Use canonical ID.
                      let callee_id = format!("{}::{}@{}", rt, method_name, sig_ref.crate_name);
                      callees.push(callee_id);
                      resolved = true;
@@ -244,14 +243,7 @@ fn visit_expr(
             visit_expr(&expr_if.cond, callees, index, crate_name);
             visit_block(&expr_if.then_branch, callees, index, crate_name);
             if let Some((_, else_branch)) = &expr_if.else_branch {
-                match &**else_branch {
-                    Expr::Block(block) => visit_block(&block.block, callees, index, crate_name),
-                    Expr::If(else_if) => { // This is an Expr::If, so recursive call `visit_expr` NOT `visit_stmts`
-                        callees.push("else if(...)".to_string());
-                         visit_expr(else_if, callees, index, crate_name);
-                    }
-                    other => visit_expr(other, callees, index, crate_name),
-                }
+                visit_expr(else_branch, callees, index, crate_name);
             }
         }
         Expr::Match(expr_match) => {

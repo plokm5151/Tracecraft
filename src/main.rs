@@ -74,7 +74,7 @@ fn main() {
     }
 
     // Branch based on engine selection
-    let callgraph = match cli.engine.as_str() {
+    let (callgraph, files) = match cli.engine.as_str() {
         "scip" => {
             // SCIP Engine: Use rust-analyzer for precise semantic analysis
             println!("[Engine] Using SCIP (rust-analyzer semantic analysis)");
@@ -89,14 +89,21 @@ fn main() {
                 Err(e) => {
                     eprintln!("Error generating SCIP index: {}", e);
                     eprintln!("Falling back to syn engine...");
-                    // Fall through to syn engine
                     return run_syn_engine(&cli);
                 }
             };
             
             // Ingest SCIP and build graph
             match tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(&scip_path) {
-                Ok(cg) => cg,
+                Ok(cg) => {
+                    // For SCIP engine, we still might want file contents for rich traces
+                    let loaded_files = if let Some(ws) = &cli.workspace {
+                        ProjectLoader::load_workspace(ws, cli.expand_macros).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    (cg, loaded_files)
+                }
                 Err(e) => {
                     eprintln!("Error ingesting SCIP index: {}", e);
                     eprintln!("Falling back to syn engine...");
@@ -111,12 +118,11 @@ fn main() {
         }
     };
 
-    // Common post-processing
-    run_post_processing(&cli, &callgraph);
+    run_post_processing(&cli, &callgraph, &files);
 }
 
-/// Run the syn-based analysis engine (internal, returns CallGraph)
-fn run_syn_engine_internal(cli: &Cli) -> tracecraft::domain::callgraph::CallGraph {
+/// Run the syn-based analysis engine (internal, returns CallGraph and Files)
+fn run_syn_engine_internal(cli: &Cli) -> (tracecraft::domain::callgraph::CallGraph, Vec<(String, String, String)>) {
     let mut files = Vec::<(String,String,String)>::new();
 
     // workspace (primary method)
@@ -148,24 +154,31 @@ fn run_syn_engine_internal(cli: &Cli) -> tracecraft::domain::callgraph::CallGrap
     println!("Using storage backend: {}", cli.store);
 
     let cg_builder = SimpleCallGraphBuilder::new_with_store(store);
-    cg_builder.build_call_graph(&files)
+    (cg_builder.build_call_graph(&files), files)
 }
 
 /// Run syn engine (wrapper for fallback)
 fn run_syn_engine(cli: &Cli) {
-    let callgraph = run_syn_engine_internal(cli);
-    run_post_processing(cli, &callgraph);
+    let (callgraph, files) = run_syn_engine_internal(cli);
+    run_post_processing(cli, &callgraph, &files);
 }
 
 /// Common post-processing: reverse queries, trace expansion, DOT export
-fn run_post_processing(cli: &Cli, callgraph: &tracecraft::domain::callgraph::CallGraph) {
+fn run_post_processing(cli: &Cli, callgraph: &tracecraft::domain::callgraph::CallGraph, files: &[(String, String, String)]) {
 
     // for quick lookup
-    let mut map=HashMap::new(); for n in &callgraph.nodes{map.insert(n.id.clone(),n);}
+    let mut map=HashMap::new(); 
+    for n in &callgraph.nodes {
+        map.insert(n.id.clone(), n);
+    }
+    
     let entry=callgraph.nodes.iter()
-        .find(|n|n.id.starts_with("main@"))
-        .map(|n|n.id.clone())
-        .unwrap_or_else(||{eprintln!("WARN: no main() found");"".into()});
+        .find(|n| n.id.starts_with("main@") || n.id.contains("::main"))
+        .map(|n| n.id.clone())
+        .unwrap_or_else(|| {
+            eprintln!("WARN: no main() found in call graph");
+            "".into()
+        });
 
     // ── reverse call查詢 ──────────────────────
     if let Some(ref target_id) = cli.reverse {
