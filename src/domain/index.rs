@@ -2,7 +2,9 @@ use dashmap::DashMap;
 use rayon::prelude::*;
 use syn::{Item, Type, Visibility};
 
-#[derive(Debug, Clone)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionSignature {
     pub name: String,
     pub is_public: bool,

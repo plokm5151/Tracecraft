@@ -50,6 +50,10 @@ struct Cli {
     /// Expand macros using `cargo expand` before analysis
     #[arg(long)]
     expand_macros: bool,
+
+    /// Storage backend: "mem" (default, in-memory) or "disk" (sled DB)
+    #[arg(long, default_value = "mem")]
+    store: String,
 }
 
 fn main() {
