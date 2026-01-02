@@ -53,7 +53,7 @@ impl crate::ports::CallGraphBuilder for SimpleCallGraphBuilder {
         }).collect();
 
         // Step 3: Collect Nodes
-        for (crate_name, file, ast) in &asts {
+        for (crate_name, _file, ast) in &asts {
             for item in &ast.items {
                  if let Item::Fn(func) = item {
                      let name = func.sig.ident.to_string();

@@ -1,9 +1,7 @@
 /// Phase 2 Verification Tests: SCIP Engine
 /// Tests the enclosing-range algorithm in ScipIngestor.
 
-use tracecraft::domain::scip_ingest::ScipIngestor;
-use tracecraft::domain::callgraph::CallGraph;
-use std::path::Path;
+use mr_hedgehog::domain::scip_ingest::ScipIngestor;
 use tempfile::tempdir;
 use std::fs::File;
 use std::io::Write;

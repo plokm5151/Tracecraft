@@ -1,5 +1,5 @@
-use tracecraft::infrastructure::SimpleCallGraphBuilder;
-use tracecraft::ports::CallGraphBuilder;
+use mr_hedgehog::infrastructure::SimpleCallGraphBuilder;
+use mr_hedgehog::ports::CallGraphBuilder;
 
 #[test]
 fn node_ids_include_crate_names() {
@@ -17,12 +17,12 @@ fn node_ids_include_crate_names() {
         ("crate_two".to_string(), "lib.rs".to_string(), crate_two.to_string()),
     ];
 
-    let builder = SimpleCallGraphBuilder;
+    let builder = SimpleCallGraphBuilder::new();
     let cg = builder.build_call_graph(&sources);
     let mut ids: Vec<String> = cg.nodes.iter().map(|n| n.id.clone()).collect();
     ids.sort();
 
-    assert!(ids.contains(&"foo@crate_one".to_string()));
-    assert!(ids.contains(&"bar@crate_one".to_string()));
-    assert!(ids.contains(&"baz@crate_two".to_string()));
+    assert!(ids.contains(&"crate_one::foo".to_string()), "Expected foo, found: {:?}", ids);
+    assert!(ids.contains(&"crate_one::bar".to_string()), "Expected bar, found: {:?}", ids);
+    assert!(ids.contains(&"crate_two::baz".to_string()), "Expected baz, found: {:?}", ids);
 }

@@ -517,6 +517,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "mr_hedgehog"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "cargo_metadata",
+ "clap",
+ "criterion",
+ "dashmap",
+ "memmap2",
+ "num_cpus",
+ "proc-macro2",
+ "protobuf",
+ "rayon",
+ "scip",
+ "serde",
+ "serde_json",
+ "sled",
+ "syn",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -951,30 +975,6 @@ name = "toml_write"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfb942dfe1d8e29a7ee7fcbde5bd2b9a25fb89aa70caea2eba3bee836ff41076"
-
-[[package]]
-name = "tracecraft"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "cargo_metadata",
- "clap",
- "criterion",
- "dashmap",
- "memmap2",
- "num_cpus",
- "proc-macro2",
- "protobuf",
- "rayon",
- "scip",
- "serde",
- "serde_json",
- "sled",
- "syn",
- "tempfile",
- "toml",
-]
 
 [[package]]
 name = "unicode-ident"

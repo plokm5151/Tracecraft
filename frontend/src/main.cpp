@@ -6,9 +6,9 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     
     // Application metadata
-    QApplication::setApplicationName("TraceCraft");
+    QApplication::setApplicationName("Mr. Hedgehog");
     QApplication::setApplicationVersion("0.4.0");
-    QApplication::setOrganizationName("TraceCraft");
+    QApplication::setOrganizationName("Mr. Hedgehog");
     
     MainWindow window;
     window.show();

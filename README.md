@@ -1,6 +1,6 @@
-# TraceCraft
+# Mr. Hedgehog 🦔
 
-A Rust-based static analysis tool focused on multi-crate workspaces, enabling comprehensive call graph, AST, and dependency tree analysis for large-scale projects, optimized for local and privacy-sensitive environments.
+A static analysis tool for multi-crate workspaces, enabling comprehensive call graph, AST, and dependency tree analysis for large-scale projects, optimized for local and privacy-sensitive environments.
 
 ## ✨ Features
 
@@ -33,8 +33,8 @@ npm install -g @sourcegraph/scip-python
 
 ```bash
 # Clone the repository
-git clone https://github.com/plokm5151/tracecraft
-cd tracecraft
+git clone https://github.com/plokm5151/Mr-Hedgehog
+cd Mr-Hedgehog
 
 # Build Rust backend
 cargo build --release
@@ -45,7 +45,7 @@ mkdir -p build && cd build
 cmake .. -DCMAKE_PREFIX_PATH=/usr/local/opt/qt@6
 make -j4
 
-# The app bundle is at dist/TraceCraft.app
+# The app bundle is at dist/MrHedgehog.app
 ```
 
 ## 🚀 Usage
@@ -54,28 +54,28 @@ make -j4
 
 ```bash
 # Analyze a Rust workspace (syn engine - default)
-tracecraft --workspace ./Cargo.toml --output callgraph.dot
+mr_hedgehog --workspace ./Cargo.toml --output callgraph.dot
 
 # Analyze with SCIP engine (more precise)
-tracecraft --workspace ./Cargo.toml --output callgraph.dot --engine scip
+mr_hedgehog --workspace ./Cargo.toml --output callgraph.dot --engine scip
 
 # Analyze a Python project
-tracecraft --workspace ./project --output callgraph.dot --engine scip --lang python
+mr_hedgehog --workspace ./project --output callgraph.dot --engine scip --lang python
 
 # Reverse trace: find all callers of a function
-tracecraft --workspace ./Cargo.toml --output trace.txt --reverse "MyType::my_func"
+mr_hedgehog --workspace ./Cargo.toml --output trace.txt --reverse "MyType::my_func"
 
 # Expand all paths from main
-tracecraft --workspace ./Cargo.toml --output paths.txt --expand-paths
+mr_hedgehog --workspace ./Cargo.toml --output paths.txt --expand-paths
 ```
 
 ### GUI Application
 
 ```bash
 # Launch the Qt GUI
-open dist/TraceCraft.app
+open dist/MrHedgehog.app
 # or
-./dist/TraceCraft.app/Contents/MacOS/TraceCraftUI
+./dist/MrHedgehog.app/Contents/MacOS/MrHedgehogUI
 ```
 
 1. Click **Browse** to select a project folder

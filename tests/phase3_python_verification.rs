@@ -3,8 +3,8 @@
 /// Tests the multi-language SCIP infrastructure without requiring
 /// external tools (scip-python, rust-analyzer) to be installed.
 
-use tracecraft::domain::language::Language;
-use tracecraft::infrastructure::scip_runner::{build_command_spec, ScipCommandSpec};
+use mr_hedgehog::domain::language::Language;
+use mr_hedgehog::infrastructure::scip_runner::{build_command_spec, ScipCommandSpec};
 
 /// Verify that the Language enum correctly parses string inputs.
 #[test]

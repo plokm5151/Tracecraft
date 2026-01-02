@@ -18,7 +18,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_analysisProcess(nullptr)
 {
-    setWindowTitle("TraceCraft - Rust Call Graph Analyzer");
+    setWindowTitle("Mr. Hedgehog - Rust Call Graph Analyzer");
     setMinimumSize(1200, 800);
     resize(1400, 900);
     
@@ -196,7 +196,7 @@ void MainWindow::setupMenuBar()
     // Help menu
     QMenu *helpMenu = menuBar->addMenu("&Help");
     
-    QAction *aboutAction = helpMenu->addAction("&About TraceCraft");
+    QAction *aboutAction = helpMenu->addAction("&About Mr. Hedgehog");
     connect(aboutAction, &QAction::triggered, this, &MainWindow::showAbout);
 }
 
@@ -338,14 +338,14 @@ void MainWindow::runAnalysis()
     m_analyzeBtn->setEnabled(false);
     
     // Find backend executable
-    QString backendPath = QApplication::applicationDirPath() + "/tracecraft";
+    QString backendPath = QApplication::applicationDirPath() + "/mr_hedgehog";
     if (!QFile::exists(backendPath)) {
         // Try relative path during development
-        backendPath = QDir::currentPath() + "/target/release/tracecraft";
+        backendPath = QDir::currentPath() + "/target/release/mr_hedgehog";
     }
     
     if (!QFile::exists(backendPath)) {
-        m_graphView->showPlaceholder("Backend not found.\nPlease ensure 'tracecraft' is built.");
+        m_graphView->showPlaceholder("Backend not found.\nPlease ensure 'mr_hedgehog' is built.");
         m_statusLabel->setText("Error: Backend not found");
         m_analyzeBtn->setEnabled(true);
         return;
@@ -360,7 +360,7 @@ void MainWindow::runAnalysis()
     
     QStringList args;
     args << "--workspace" << (m_currentFolder + "/Cargo.toml");
-    args << "--output" << "/tmp/tracecraft_output.dot";
+    args << "--output" << "/tmp/mr_hedgehog_output.dot";
     args << "--engine" << "syn";
     
     m_analysisProcess->start(backendPath, args);
@@ -378,7 +378,7 @@ void MainWindow::onAnalysisFinished(int exitCode, QProcess::ExitStatus status)
     
     if (exitCode == 0) {
         // Load and display results
-        QString dotFile = "/tmp/tracecraft_output.dot";
+        QString dotFile = "/tmp/mr_hedgehog_output.dot";
         if (QFile::exists(dotFile)) {
             m_graphView->loadDotFile(dotFile);
             m_statusLabel->setText("Analysis complete!");
@@ -404,8 +404,8 @@ void MainWindow::clearResults()
 
 void MainWindow::showAbout()
 {
-    QMessageBox::about(this, "About TraceCraft",
-        "<h2>TraceCraft v0.4.0</h2>"
+    QMessageBox::about(this, "About Mr. Hedgehog",
+        "<h2>Mr. Hedgehog v0.4.0</h2>"
         "<p>Rust Static Analysis Tool for Multi-Crate Workspaces</p>"
         "<p>Features:<ul>"
         "<li>Call graph generation</li>"
@@ -419,7 +419,7 @@ void MainWindow::showAbout()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("TraceCraft", "TraceCraftUI");
+    QSettings settings("Mr. Hedgehog", "Mr. HedgehogUI");
     restoreGeometry(settings.value("geometry").toByteArray());
     m_currentFolder = settings.value("lastFolder").toString();
     if (!m_currentFolder.isEmpty()) {
@@ -430,7 +430,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("TraceCraft", "TraceCraftUI");
+    QSettings settings("Mr. Hedgehog", "Mr. HedgehogUI");
     settings.setValue("geometry", saveGeometry());
     settings.setValue("lastFolder", m_currentFolder);
 }

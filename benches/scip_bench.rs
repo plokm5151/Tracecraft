@@ -92,7 +92,7 @@ fn bench_scip_full_pipeline(c: &mut Criterion) {
             &path,
             |b, path| {
                 b.iter(|| {
-                    tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
+                    mr_hedgehog::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
                         black_box(path)
                     ).unwrap()
                 })
@@ -160,7 +160,7 @@ fn bench_scaling(c: &mut Criterion) {
             &path,
             |b, path| {
                 b.iter(|| {
-                    tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
+                    mr_hedgehog::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
                         black_box(path)
                     ).unwrap()
                 })
@@ -192,7 +192,7 @@ fn bench_reference_resolution(c: &mut Criterion) {
             &path,
             |b, path| {
                 b.iter(|| {
-                    tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
+                    mr_hedgehog::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(
                         black_box(path)
                     ).unwrap()
                 })

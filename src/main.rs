@@ -1,14 +1,13 @@
 use clap::Parser;
-use std::fs;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use tracecraft::infrastructure::{SimpleCallGraphBuilder, DotExporter};
-use tracecraft::infrastructure::project_loader::ProjectLoader;
-use tracecraft::infrastructure::source_manager::SourceManager;
-use tracecraft::infrastructure::concurrency;
-use tracecraft::domain::trace::TraceGenerator;
-use tracecraft::domain::language::Language;
-use tracecraft::ports::{CallGraphBuilder, OutputExporter};
+use mr_hedgehog::infrastructure::{SimpleCallGraphBuilder, DotExporter};
+use mr_hedgehog::infrastructure::project_loader::ProjectLoader;
+use mr_hedgehog::infrastructure::source_manager::SourceManager;
+use mr_hedgehog::infrastructure::concurrency;
+use mr_hedgehog::domain::trace::TraceGenerator;
+use mr_hedgehog::domain::language::Language;
+use mr_hedgehog::ports::{CallGraphBuilder, OutputExporter};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -90,7 +89,7 @@ fn main() {
                 .unwrap_or(std::path::Path::new("."));
             
             // Generate SCIP index for the specified language
-            let scip_path = match tracecraft::infrastructure::scip_runner::generate_scip_index_for_language(
+            let scip_path = match mr_hedgehog::infrastructure::scip_runner::generate_scip_index_for_language(
                 workspace_path, 
                 language,
                 &[]
@@ -109,7 +108,7 @@ fn main() {
             };
             
             // Ingest SCIP and build graph
-            match tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(&scip_path) {
+            match mr_hedgehog::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(&scip_path) {
                 Ok(cg) => {
                     // For SCIP engine, we still might want file contents for rich traces
                     let loaded_files = if let Some(ws) = &cli.workspace {
@@ -137,7 +136,7 @@ fn main() {
 }
 
 /// Run the syn-based analysis engine (internal, returns CallGraph and Files)
-fn run_syn_engine_internal(cli: &Cli) -> (tracecraft::domain::callgraph::CallGraph, Vec<(String, String, String)>) {
+fn run_syn_engine_internal(cli: &Cli) -> (mr_hedgehog::domain::callgraph::CallGraph, Vec<(String, String, String)>) {
     let mut files = Vec::<(String,String,String)>::new();
 
     // workspace (primary method)
@@ -158,12 +157,12 @@ fn run_syn_engine_internal(cli: &Cli) -> (tracecraft::domain::callgraph::CallGra
     if files.is_empty() { panic!("No input provided"); }
 
     // Initialize storage backend
-    let store: std::sync::Arc<dyn tracecraft::domain::store::SymbolStore> = match cli.store.as_str() {
+    let store: std::sync::Arc<dyn mr_hedgehog::domain::store::SymbolStore> = match cli.store.as_str() {
         "disk" => {
-            let db_path = "tracecraft_db";
-            std::sync::Arc::new(tracecraft::domain::store::DiskSymbolStore::new(db_path).expect("Failed to open disk store"))
+            let db_path = "mr_hedgehog_db";
+            std::sync::Arc::new(mr_hedgehog::domain::store::DiskSymbolStore::new(db_path).expect("Failed to open disk store"))
         }
-        _ => std::sync::Arc::new(tracecraft::domain::store::MemorySymbolStore::default()),
+        _ => std::sync::Arc::new(mr_hedgehog::domain::store::MemorySymbolStore::default()),
     };
 
     println!("Using storage backend: {}", cli.store);
@@ -179,7 +178,7 @@ fn run_syn_engine(cli: &Cli) {
 }
 
 /// Common post-processing: reverse queries, trace expansion, DOT export
-fn run_post_processing(cli: &Cli, callgraph: &tracecraft::domain::callgraph::CallGraph, files: &[(String, String, String)]) {
+fn run_post_processing(cli: &Cli, callgraph: &mr_hedgehog::domain::callgraph::CallGraph, files: &[(String, String, String)]) {
 
     // for quick lookup
     let mut map=HashMap::new(); 

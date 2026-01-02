@@ -29,7 +29,7 @@ impl ProjectLoader {
                          // cargo expand works per crate (or specific target). 
                          // Simple usage: cargo expand --manifest-path package/Cargo.toml
                          // But we are at workspace level. We might need package manifest.
-                         let package_manifest = &package.manifest_path;
+                         let _package_manifest = &package.manifest_path;
                          
                          // Note: running cargo expand for EACH package.
                          // Optimization: cargo expand runs the whole crate.

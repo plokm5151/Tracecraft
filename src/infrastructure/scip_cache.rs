@@ -12,7 +12,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// Cache metadata stored alongside the SCIP index.
@@ -206,8 +206,6 @@ impl ScipCache {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use std::thread::sleep;
-    use std::time::Duration;
 
     #[test]
     fn test_cache_miss_when_no_files() {
