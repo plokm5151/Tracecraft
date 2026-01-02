@@ -1,4 +1,4 @@
-use syn::{Item, Stmt, Expr};
+use syn::{Item, Stmt, Expr, ImplItem, Type};
 use crate::domain::callgraph::{CallGraph, CallGraphNode};
 use crate::domain::index::SymbolIndex;
 

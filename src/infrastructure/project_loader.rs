@@ -31,7 +31,7 @@ impl ProjectLoader {
                     }
                     
                     let src_path = &target.src_path;
-                    let src_dir = src_path.parent().unwrap_or(src_path.as_std_path());
+                    let src_dir = src_path.parent().unwrap_or(src_path);
                     
                     // Now recursively find all .rs files in this src_dir
                     // Note: target.src_path is an Utf8PathBuf from cargo_metadata
