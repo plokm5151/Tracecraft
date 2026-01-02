@@ -6,6 +6,7 @@ pub mod project_loader;
 pub mod source_manager;
 pub mod expander;
 pub mod concurrency;
+pub mod scip_runner;
 
 use std::sync::Arc;
 

@@ -55,6 +55,10 @@ struct Cli {
     /// Storage backend: "mem" (default, in-memory) or "disk" (sled DB)
     #[arg(long, default_value = "mem")]
     store: String,
+
+    /// Analysis engine: "syn" (default, AST-based) or "scip" (rust-analyzer semantic)
+    #[arg(long, default_value = "syn")]
+    engine: String,
 }
 
 fn main() {
@@ -69,7 +73,51 @@ fn main() {
         println!("[DEBUG] Config: {:?}", cli);
     }
 
-    let mut files=Vec::<(String,String,String)>::new();
+    // Branch based on engine selection
+    let callgraph = match cli.engine.as_str() {
+        "scip" => {
+            // SCIP Engine: Use rust-analyzer for precise semantic analysis
+            println!("[Engine] Using SCIP (rust-analyzer semantic analysis)");
+            
+            let workspace_path = cli.workspace.as_ref()
+                .map(|ws| std::path::Path::new(ws).parent().unwrap_or(std::path::Path::new(".")))
+                .unwrap_or(std::path::Path::new("."));
+            
+            // Generate SCIP index
+            let scip_path = match tracecraft::infrastructure::scip_runner::generate_scip_index(workspace_path) {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("Error generating SCIP index: {}", e);
+                    eprintln!("Falling back to syn engine...");
+                    // Fall through to syn engine
+                    return run_syn_engine(&cli);
+                }
+            };
+            
+            // Ingest SCIP and build graph
+            match tracecraft::domain::scip_ingest::ScipIngestor::ingest_and_build_graph(&scip_path) {
+                Ok(cg) => cg,
+                Err(e) => {
+                    eprintln!("Error ingesting SCIP index: {}", e);
+                    eprintln!("Falling back to syn engine...");
+                    return run_syn_engine(&cli);
+                }
+            }
+        }
+        _ => {
+            // Syn Engine: Traditional AST-based analysis
+            println!("[Engine] Using syn (AST-based analysis)");
+            run_syn_engine_internal(&cli)
+        }
+    };
+
+    // Common post-processing
+    run_post_processing(&cli, &callgraph);
+}
+
+/// Run the syn-based analysis engine (internal, returns CallGraph)
+fn run_syn_engine_internal(cli: &Cli) -> tracecraft::domain::callgraph::CallGraph {
+    let mut files = Vec::<(String,String,String)>::new();
 
     // workspace (primary method)
     if let Some(ws) = &cli.workspace {
@@ -81,17 +129,13 @@ fn main() {
             Err(e) => panic!("Failed to load workspace: {:?}", e),
         }
     } else {
-        // Legacy/Fallback handling could go here. 
-        // For now, if no workspace is provided but input is, we panic (based on user request to focus on workspace)
-        // Or we could implement a quick fallback if needed.
         if !cli.input.is_empty() || !cli.folder.is_empty() {
              panic!("Legacy input/folder mode is momentarily disabled during refactor. Please use --workspace.");
         }
     }
 
-    if files.is_empty(){panic!("No input provided");}
+    if files.is_empty() { panic!("No input provided"); }
 
-    // ── 2. **唯一一次** 建圖 ─────────────────
     // Initialize storage backend
     let store: std::sync::Arc<dyn tracecraft::domain::store::SymbolStore> = match cli.store.as_str() {
         "disk" => {
@@ -104,7 +148,17 @@ fn main() {
     println!("Using storage backend: {}", cli.store);
 
     let cg_builder = SimpleCallGraphBuilder::new_with_store(store);
-    let callgraph = cg_builder.build_call_graph(&files);
+    cg_builder.build_call_graph(&files)
+}
+
+/// Run syn engine (wrapper for fallback)
+fn run_syn_engine(cli: &Cli) {
+    let callgraph = run_syn_engine_internal(cli);
+    run_post_processing(cli, &callgraph);
+}
+
+/// Common post-processing: reverse queries, trace expansion, DOT export
+fn run_post_processing(cli: &Cli, callgraph: &tracecraft::domain::callgraph::CallGraph) {
 
     // for quick lookup
     let mut map=HashMap::new(); for n in &callgraph.nodes{map.insert(n.id.clone(),n);}
