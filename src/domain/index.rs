@@ -17,6 +17,10 @@ pub struct SymbolIndex {
     
     // Key: (Type, Method)
     pub type_methods: HashMap<(String, String), FunctionSignature>,
+
+    // Key: Method Name -> List of (Type Name, Crate Name)
+    // Acceleration map for resolving "obj.foo()" when we don't know the type of obj.
+    pub method_lookup: HashMap<String, Vec<(String, String)>>,
 }
 
 impl SymbolIndex {
@@ -33,6 +37,16 @@ impl SymbolIndex {
         }
 
         index
+    }
+
+    pub fn find_methods_by_name(&self, method_name: &str) -> Vec<&FunctionSignature> {
+        if let Some(candidates) = self.method_lookup.get(method_name) {
+            candidates.iter()
+                .filter_map(|key| self.type_methods.get(key))
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     fn index_file(&mut self, crate_name: &str, file_path: &str, ast: &syn::File) {
@@ -89,7 +103,12 @@ impl SymbolIndex {
                                         crate_name: crate_name.to_string(),
                                     };
 
-                                    self.type_methods.insert((type_name.clone(), method_name), sig);
+                                    self.type_methods.insert((type_name.clone(), method_name.clone()), sig);
+                                    
+                                    // Populate acceleration map
+                                    self.method_lookup.entry(method_name)
+                                        .or_default()
+                                        .push((type_name.clone(), method_name.clone())); // Store key for type_methods
                                 }
                             }
                         }

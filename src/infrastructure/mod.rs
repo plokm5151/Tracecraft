@@ -96,26 +96,68 @@ fn visit_expr(
         }
         Expr::MethodCall(expr_method) => {
             let method_name = expr_method.method.to_string();
-            // 嘗試靜態取得 receiver 型別
+            // 嘗試靜態取得 receiver 型別 (Best effort inference)
             let receiver_type = match &*expr_method.receiver {
                 Expr::Path(expr_path) => expr_path.path.segments.last().map(|s| s.ident.to_string()),
                 _ => None,
             };
             
             let mut resolved = false;
+
+            // Strategy 1: Exact match via inferred type
             if let Some(rt) = &receiver_type {
-                // Lookup in Semantic Index
                 if let Some(sig) = index.type_methods.get(&(rt.clone(), method_name.clone())) {
                      // Found it! Use canonical ID.
-                     // Format: Type::Method@DefiningCrate
                      let callee_id = format!("{}::{}@{}", rt, method_name, sig.crate_name);
                      callees.push(callee_id);
                      resolved = true;
                 }
             }
             
+            // Strategy 2: Conservative Lookup (Name-based resolution)
             if !resolved {
-                // Fallback: assume local or unknown
+                let candidates = index.find_methods_by_name(&method_name);
+                if !candidates.is_empty() {
+                    // We found one or more methods with this name. Link to ALL of them.
+                    // This is conservative: "It could be any of these".
+                    for sig in candidates {
+                        // Extract Type Name from location or we need to look it up backward?
+                        // Actually our find_methods_by_name uses method_lookup which stores the Type name key.
+                        // But wait, find_methods_by_name returns &FunctionSignature. 
+                        // FunctionSignature doesn't strictly store the "Type" name, it stores function metadata.
+                        // However, we construct the ID as Type::Method@Crate.
+                        // We need the Type Name to construct the ID.
+                        
+                        // FIX: We need to know which Type this method belongs to.
+                        // Let's rely on the fact that if we found it via find_methods_by_name, 
+                        // we iterate over keys in method_lookup which are (Type, Method).
+                        // -> We should probably update find_methods_by_name to return (Type, &Sig) 
+                        //    OR just reconstruct it here if we expose method_lookup directly.
+                        
+                        // Implementation Adjustment: Access method_lookup directly or update query.
+                        // To avoid changing domain interface again right now, let's use the public access if available
+                        // or just rely on global uniqueness if the lookup returns signatures.
+                        
+                        // Wait, ID generation logic: "{}::{}@{}" -> Type, Method, Crate.
+                        // My SymbolIndex::type_methods Key is (Type, Method).
+                        // I can iterate method_lookup manually here? No, let's update call.
+                    }
+                    
+                    // Actually, let's just use the public method_lookup map directly since fields are public in struct.
+                    if let Some(keys) = index.method_lookup.get(&method_name) {
+                        for (type_name, _) in keys {
+                             if let Some(sig) = index.type_methods.get(&(type_name.clone(), method_name.clone())) {
+                                 let callee_id = format!("{}::{}@{}", type_name, method_name, sig.crate_name);
+                                 callees.push(callee_id);
+                             }
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+
+            // Strategy 3: Fallback (Unknown local call)
+            if !resolved {
                 if let Some(rt) = receiver_type {
                     callees.push(format!("{}::{}@{}", rt, method_name, crate_name));
                 } else {
