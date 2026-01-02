@@ -50,7 +50,11 @@ impl SymbolIndex {
     }
 
     fn index_file(&mut self, crate_name: &str, file_path: &str, ast: &syn::File) {
-        for item in &ast.items {
+        self.index_items(crate_name, file_path, &ast.items);
+    }
+
+    fn index_items(&mut self, crate_name: &str, file_path: &str, items: &[Item]) {
+        for item in items {
             match item {
                 Item::Fn(func) => {
                     let name = func.sig.ident.to_string();
@@ -112,6 +116,12 @@ impl SymbolIndex {
                                 }
                             }
                         }
+                    }
+                }
+                Item::Mod(module) => {
+                    // Recurse into inline modules (common in cargo-expand output)
+                    if let Some((_, content)) = &module.content {
+                        self.index_items(crate_name, file_path, content);
                     }
                 }
                 _ => {}
