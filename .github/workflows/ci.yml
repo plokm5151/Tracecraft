@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1 # Using a popular action, or could use standard setup
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Run Unit Tests
+      run: cargo test --verbose
+
+    - name: Run Smoke Test
+      run: |
+        chmod +x scripts/smoke_test.sh
+        ./scripts/smoke_test.sh
