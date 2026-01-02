@@ -1,4 +1,4 @@
-/// Concurrency management for TraceCraft.
+/// Concurrency management for Mr. Hedgehog.
 /// Configures thread pools to reserve system capacity for UI/LSP.
 
 use anyhow::Result;
@@ -15,7 +15,7 @@ pub fn init_thread_pool() -> Result<()> {
         .build_global()?;
     
     println!(
-        "[TraceCraft] Initialized thread pool: {} workers (system has {} cores)",
+        "[Mr. Hedgehog] Initialized thread pool: {} workers (system has {} cores)",
         workers, cores
     );
     

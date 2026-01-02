@@ -1,6 +1,6 @@
 /// Language Domain Module
 /// 
-/// Defines supported programming languages for TraceCraft analysis.
+/// Defines supported programming languages for Mr. Hedgehog analysis.
 
 use std::path::Path;
 

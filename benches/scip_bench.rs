@@ -1,4 +1,4 @@
-/// Benchmarks for TraceCraft SCIP ingestion pipeline.
+/// Benchmarks for Mr. Hedgehog SCIP ingestion pipeline.
 /// 
 /// Run with: `cargo bench`
 /// 

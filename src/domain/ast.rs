@@ -1,4 +1,4 @@
-// AST data structures for TraceCraft.
+// AST data structures for Mr. Hedgehog.
 // These types represent parsed Rust code in a form suitable for static analysis.
 
 /// A node in the abstract syntax tree.

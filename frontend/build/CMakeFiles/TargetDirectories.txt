@@ -1,5 +1,5 @@
-/Users/frank_d_chen/Downloads/Tracecraft/frontend/build/CMakeFiles/MrHedgehogUI.dir
-/Users/frank_d_chen/Downloads/Tracecraft/frontend/build/CMakeFiles/edit_cache.dir
-/Users/frank_d_chen/Downloads/Tracecraft/frontend/build/CMakeFiles/rebuild_cache.dir
-/Users/frank_d_chen/Downloads/Tracecraft/frontend/build/CMakeFiles/MrHedgehogUI_autogen_timestamp_deps.dir
-/Users/frank_d_chen/Downloads/Tracecraft/frontend/build/CMakeFiles/MrHedgehogUI_autogen.dir
+/Users/frank_d_chen/Downloads/Mr. Hedgehog/frontend/build/CMakeFiles/MrHedgehogUI.dir
+/Users/frank_d_chen/Downloads/Mr. Hedgehog/frontend/build/CMakeFiles/edit_cache.dir
+/Users/frank_d_chen/Downloads/Mr. Hedgehog/frontend/build/CMakeFiles/rebuild_cache.dir
+/Users/frank_d_chen/Downloads/Mr. Hedgehog/frontend/build/CMakeFiles/MrHedgehogUI_autogen_timestamp_deps.dir
+/Users/frank_d_chen/Downloads/Mr. Hedgehog/frontend/build/CMakeFiles/MrHedgehogUI_autogen.dir

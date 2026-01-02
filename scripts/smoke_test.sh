@@ -30,10 +30,10 @@ echo "Testing disk storage backend..."
     exit 1
 }
 
-if [ -d "tracecraft_db" ]; then
-    echo "Success: tracecraft_db folder created by disk store."
+if [ -d "mr_hedgehog_db" ]; then
+    echo "Success: mr_hedgehog_db folder created by disk store."
 else
-    echo "Error: tracecraft_db folder not found after disk store run."
+    echo "Error: mr_hedgehog_db folder not found after disk store run."
     exit 1
 fi
 set +x

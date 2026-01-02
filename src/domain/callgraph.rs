@@ -1,4 +1,4 @@
-// Call graph structures for TraceCraft.
+// Call graph structures for Mr. Hedgehog.
 // Represents function/module call relationships.
 
 /// A node in the call graph.
