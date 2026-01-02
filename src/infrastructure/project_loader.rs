@@ -8,7 +8,7 @@ pub struct ProjectLoader;
 impl ProjectLoader {
     /// Load all source files from a Cargo workspace manifest.
     /// Returns a vector of (crate_name, file_path, file_content).
-    pub fn load_workspace(manifest_path: &str) -> Result<Vec<(String, String, String)>> {
+    pub fn load_workspace(manifest_path: &str, expand_macros: bool) -> Result<Vec<(String, String, String)>> {
         let metadata = MetadataCommand::new()
             .manifest_path(manifest_path)
             .no_deps()
