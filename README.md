@@ -2,22 +2,21 @@
 
 A static analysis tool for multi-crate workspaces, enabling comprehensive call graph, AST, and dependency tree analysis for large-scale projects.
 
-**Now featuring animated hedgehogs!** 🦔🦔
-
 ## ✨ Features
 
 - **Multi-language support**: Rust and Python via SCIP indexing
 - **Call graph generation**: Visualize function dependencies
 - **AST analysis**: Parse and analyze source code structure
 - **Dependency tracing**: Forward and reverse path analysis
-- **Qt GUI**: Modern dark-themed desktop application with animated hedgehogs!
+- **IPC Backend**: Long-running daemon mode with JSON-TCP protocol
+- **Qt GUI**: Modern dark-themed desktop application for interactive analysis
 
 ## 📦 Installation
 
 ### Prerequisites
 
 - Rust toolchain (1.70+)
-- Qt 6 (for GUI: `brew install qt@6` on macOS)
+- Qt 6 (`brew install qt@6` on macOS)
 - rust-analyzer (for Rust SCIP analysis)
 - scip-python (optional, for Python support)
 
@@ -29,18 +28,22 @@ brew install rust-analyzer
 npm install -g @sourcegraph/scip-python
 ```
 
+### Quick Packaging (macOS)
+
+Use the provided script to build and deploy the standalone app to your Desktop:
+
+```bash
+./scripts/deploy_to_desktop.sh
+```
+
 ### Building from Source
 
 ```bash
-# Clone the repository
-git clone https://github.com/plokm5151/Mr-Hedgehog
-cd Mr-Hedgehog
-
 # Build Rust backend
 cargo build --release
 
 # Build Qt frontend
-cd frontend/build
+mkdir -p frontend/build && cd frontend/build
 cmake .. -DCMAKE_PREFIX_PATH=/usr/local/opt/qt@6
 make -j4
 ```
@@ -53,32 +56,27 @@ make -j4
 # Analyze Rust workspace
 mr_hedgehog --workspace ./Cargo.toml --output graph.dot
 
-# Use SCIP engine (more precise)
-mr_hedgehog --workspace ./Cargo.toml --output graph.dot --engine scip
+# Start in Daemon Mode (for GUI integration)
+mr_hedgehog --daemon --port 4545
 
 # Analyze Python project
 mr_hedgehog --engine scip --lang python --workspace ./project --output graph.dot
-
-# Reverse trace
-mr_hedgehog --workspace ./Cargo.toml --reverse "MyType::my_func" --output trace.txt
 ```
 
 ### GUI Application
 
-```bash
-open dist/MrHedgehog.app
-```
-
-Watch the hedgehogs walk around while you analyze your code! 🦔
+Simply double-click **MrHedgehog** on your Desktop after running the deployment script.
 
 ## 📋 CLI Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--workspace` | Path to Cargo.toml or project folder | - |
-| `--output` | Output file path | required |
+| `--output` | Output file path | - |
 | `--engine` | `syn` or `scip` | `syn` |
 | `--lang` | `rust` or `python` | `rust` |
+| `--daemon` | Start as persistent TCP server | `false` |
+| `--port` | TCP port for daemon mode | `4545` |
 | `--reverse` | Reverse trace target | - |
 | `--expand-paths` | Expand all paths from main | `false` |
 | `--debug` | Debug output | `false` |
@@ -87,25 +85,19 @@ Watch the hedgehogs walk around while you analyze your code! 🦔
 
 ```
 src/
-├── domain/           # Core logic
-│   ├── language.rs   # Language enum (Rust, Python)
-│   ├── callgraph.rs  # Call graph structures
-│   └── scip_ingest.rs # SCIP parser (parallel)
-├── infrastructure/   # External integrations
-│   ├── scip_runner.rs # Multi-language SCIP
-│   └── scip_cache.rs  # Incremental caching
-└── ports/            # Interface adapters
-
+├── domain/           # Core domain logic
+├── infrastructure/   # External tool runners (SCIP, Cargo)
+├── api/              # IPC Server & DTOs (JSON-TCP)
+└── main.rs           # CLI Entrypoint
 frontend/             # C++ Qt GUI
-├── src/
-│   ├── mainwindow.cpp
-│   └── graphview.cpp  # With animated hedgehogs! 🦔
+├── src/              # MainWindow & GraphView logic
 └── CMakeLists.txt
+scripts/              # Deployment & utility scripts
 ```
 
 ## ⚡ Performance
 
-- **Parallel processing**: rayon-based concurrent SCIP ingestion
+- **Parallel processing**: Rayon-based concurrent SCIP ingestion
 - **Incremental caching**: Skip re-indexing unchanged files
 - **Memory-mapped I/O**: Efficient large file loading
 
