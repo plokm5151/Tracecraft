@@ -129,16 +129,16 @@ GraphView::GraphView(QWidget *parent)
     // Frame style
     setFrameShape(QFrame::NoFrame);
     
-    // Setup animation timer for hedgehogs (60 FPS)
+    // Setup animation timer for hedgehogs (disabled)
     m_animationTimer = new QTimer(this);
     connect(m_animationTimer, &QTimer::timeout, this, &GraphView::updateHedgehogs);
-    m_animationTimer->start(16); // ~60 FPS
+    // m_animationTimer->start(16); // Hedgehog animation disabled
     
-    // Show initial placeholder with hedgehogs
-    showPlaceholder("Select a folder and click 'Run Analysis'\nto visualize the call graph\n\n🦔 Mr. Hedgehog is watching... 🦔");
+    // Show initial placeholder
+    showPlaceholder("Select a folder and click 'Run Analysis'\nto visualize the call graph");
     
-    // Spawn hedgehogs
-    spawnHedgehogs();
+    // Hedgehog spawning disabled
+    // spawnHedgehogs();
 }
 
 GraphView::~GraphView()
