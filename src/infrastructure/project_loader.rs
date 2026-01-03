@@ -9,8 +9,13 @@ impl ProjectLoader {
     /// Load all source files from a Cargo workspace manifest.
     /// Returns a vector of (crate_name, file_path, file_content).
     pub fn load_workspace(manifest_path: &str, expand_macros: bool) -> Result<Vec<(String, String, String)>> {
+        // CRITICAL FIX: Prefer CARGO env var (set by cargo run) to avoid "os error 2" panics
+        let cargo_bin = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        eprintln!("DEBUG: executing cargo metadata with binary: {} on manifest: {}", cargo_bin, manifest_path);
+        
         let metadata = MetadataCommand::new()
             .manifest_path(manifest_path)
+            .cargo_path(&cargo_bin)
             .no_deps()
             .exec()
             .context("Failed to execute cargo metadata")?;
