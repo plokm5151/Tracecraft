@@ -5,3 +5,5 @@ pub mod trace;
 pub mod store;
 pub mod scip_ingest;
 pub mod language;
+pub mod entry_point;
+pub mod flowgraph;

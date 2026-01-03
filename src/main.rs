@@ -7,7 +7,10 @@ use mr_hedgehog::infrastructure::source_manager::SourceManager;
 use mr_hedgehog::infrastructure::concurrency;
 use mr_hedgehog::domain::trace::TraceGenerator;
 use mr_hedgehog::domain::language::Language;
+use mr_hedgehog::domain::entry_point::EntryPointDetector;
+use mr_hedgehog::domain::flowgraph::FlowGraph;
 use mr_hedgehog::ports::{CallGraphBuilder, OutputExporter};
+use mr_hedgehog::ports::flowchart_exporter::FlowchartExporter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -71,6 +74,14 @@ struct Cli {
     /// TCP port for daemon mode (default: 4545)
     #[arg(long, default_value = "4545")]
     port: u16,
+
+    /// Output mode: "callgraph" (default) or "flowchart"
+    #[arg(long, default_value = "callgraph")]
+    mode: String,
+
+    /// Max depth for flowchart expansion (default: 10)
+    #[arg(long, default_value = "10")]
+    max_depth: usize,
 }
 
 fn main() {
@@ -308,10 +319,41 @@ fn run_post_processing(cli: &Cli, callgraph: &mr_hedgehog::domain::callgraph::Ca
         }
     }
 
-    // ── 4. export dot ────────────────────────
+    // ── 4. export (callgraph or flowchart) ────────────────────────
     let output_path = cli.output.as_ref().unwrap();
-    let exporter=DotExporter{};
-    exporter.export(&callgraph, output_path).unwrap();
-    println!("Graph saved to {}", output_path);
+    
+    if cli.mode == "flowchart" {
+        // Detect entry points
+        let lang = Language::from_str(&cli.lang).unwrap_or(Language::Rust);
+        let detector = EntryPointDetector::new(lang);
+        
+        let mut all_entries = Vec::new();
+        for (_, file_path, content) in files.iter() {
+            let entries = detector.detect(file_path, content);
+            all_entries.extend(entries);
+        }
+        
+        if all_entries.is_empty() {
+            eprintln!("Warning: No entry points detected. Flowchart will be empty.");
+        } else if cli.debug {
+            println!("\n==== [Entry Points Detected] ====");
+            for e in &all_entries {
+                println!("  {:?}: {} ({})", e.kind, e.name, e.file_path);
+            }
+            println!("=================================\n");
+        }
+        
+        // Build FlowGraph from CallGraph
+        let flow = FlowGraph::from_callgraph(&callgraph, all_entries, cli.max_depth);
+        
+        // Export as flowchart DOT
+        FlowchartExporter::export(&flow, output_path).unwrap();
+        println!("Flowchart saved to {} ({} nodes, {} edges)", output_path, flow.nodes.len(), flow.edges.len());
+    } else {
+        // Default: callgraph mode
+        let exporter = DotExporter{};
+        exporter.export(&callgraph, output_path).unwrap();
+        println!("Graph saved to {}", output_path);
+    }
 }
 
