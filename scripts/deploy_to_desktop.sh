@@ -35,7 +35,8 @@ echo "✅ Copied mr_hedgehog to Bundle."
 # Use macdeployqt to bundle Qt frameworks and plugins
 if command -v macdeployqt &> /dev/null; then
     echo "🔧 Running macdeployqt..."
-    macdeployqt "$APP_BUNDLE" -verbose=1
+    # We add -libpath to help it find frameworks in /usr/local/lib
+    macdeployqt "$APP_BUNDLE" -executable="$APP_BUNDLE/Contents/MacOS/mr_hedgehog" -libpath=/usr/local/lib -verbose=1
 else
     echo "⚠️  Warning: macdeployqt not found. The app might not work on other machines."
 fi
